@@ -7,41 +7,31 @@ export class Environment {
     }
 
     init() {
-        // --- 1. Materialien (Viel Heller) ---
-        // Stärkeres Umgebungslicht
+        // --- 1. Materialien ---
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.1); 
         this.scene.add(ambientLight);
 
-        // Texturen
         const floorTexture = this.createGrateTexture();
         floorTexture.wrapS = THREE.RepeatWrapping;
         floorTexture.wrapT = THREE.RepeatWrapping;
         floorTexture.repeat.set(2, 8);
 
         const floorMat = new THREE.MeshStandardMaterial({ 
-            map: floorTexture, 
-            color: 0xaaaaaa, // Helleres Grau für den Boden
-            roughness: 0.7, 
-            metalness: 0.4 
+            map: floorTexture, color: 0xaaaaaa, roughness: 0.7, metalness: 0.4 
         });
 
         const wallMat = new THREE.MeshStandardMaterial({ 
-            color: 0xbbbbbb, // Helleres Grau für Wände
-            roughness: 0.5, 
-            metalness: 0.2, 
-            side: THREE.DoubleSide 
+            color: 0xbbbbbb, roughness: 0.5, metalness: 0.2, side: THREE.DoubleSide 
         });
 
         const slantMat = new THREE.MeshStandardMaterial({ 
-            color: 0x999999, // Mittleres Grau
-            roughness: 0.6, 
-            side: THREE.DoubleSide
+            color: 0x999999, roughness: 0.6, side: THREE.DoubleSide
         });
 
         const ribMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9 });
         
 
-        // --- 2. Geometrie-Maße ---
+        // --- 2. Maße ---
         const floorW = 2.0;    
         const wallH = 1.6;     
         const slantS = 0.8;    
@@ -49,9 +39,7 @@ export class Environment {
         const totalH = wallH + 2 * offset;
 
 
-        // --- 3. Der Tunnel-Bau ---
-        
-        // A) BODEN & DECKE
+        // --- 3. Tunnel ---
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, 20), floorMat);
         floor.rotation.x = -Math.PI / 2; 
         floor.name = 'floor'; 
@@ -62,37 +50,25 @@ export class Environment {
         ceiling.position.y = totalH;
         this.scene.add(ceiling);
 
-        // B) SCHRÄGEN
         const slantGeo = new THREE.PlaneGeometry(slantS, 20);
-        
-        // Oben
         this.addSlant(-(floorW/2+offset/2), totalH-offset/2, Math.PI/2, Math.PI/4, slantGeo, slantMat);
         this.addSlant( (floorW/2+offset/2), totalH-offset/2, Math.PI/2, -Math.PI/4, slantGeo, slantMat);
-        // Unten
         this.addSlant(-(floorW/2+offset/2), offset/2, -Math.PI/2, Math.PI/4, slantGeo, slantMat);
         this.addSlant( (floorW/2+offset/2), offset/2, -Math.PI/2, -Math.PI/4, slantGeo, slantMat);
 
-        // C) WÄNDE
         const wGeo = new THREE.PlaneGeometry(wallH, 20); 
-
-        // Links
         const wL = new THREE.Mesh(wGeo, wallMat);
-        wL.rotation.y = Math.PI / 2; 
-        wL.rotation.z = Math.PI / 2; 
+        wL.rotation.y = Math.PI / 2; wL.rotation.z = Math.PI / 2; 
         wL.position.set(-(floorW/2 + offset), offset + wallH/2, 0);
         this.scene.add(wL);
 
-        // Rechts
         const wR = new THREE.Mesh(wGeo, wallMat);
-        wR.rotation.y = -Math.PI / 2;
-        wR.rotation.z = Math.PI / 2;
+        wR.rotation.y = -Math.PI / 2; wR.rotation.z = Math.PI / 2;
         wR.position.set((floorW/2 + offset), offset + wallH/2, 0);
         this.scene.add(wR);
 
 
-        // --- 4. Strukturen ---
-
-        // Rippen
+        // --- 4. Rippen ---
         const ribGeo = new THREE.TorusGeometry(2.1, 0.15, 4, 8); 
         for (let z = -10; z <= 10; z += 2.5) {
             const rib = new THREE.Mesh(ribGeo, ribMat);
@@ -101,9 +77,9 @@ export class Environment {
             this.scene.add(rib);
         }
 
-        // Enden
-        this.createWallEnd(10, totalH, wallMat, true); // Tür
-        this.createWallEnd(-10, totalH, wallMat, false); // Wand
+        // --- 5. ENDEN (Neu: Mit echter Lücke für die Tür) ---
+        this.createDoorWall(10, totalH, wallMat, true); // Tür-Seite
+        this.createDoorWall(-10, totalH, wallMat, false); // Geschlossene Seite
 
         // Lichter
         for (let z = -8; z <= 8; z += 4) {
@@ -121,28 +97,53 @@ export class Environment {
         this.scene.add(mesh);
     }
 
-    createWallEnd(z, totalH, wallMat, hasDoor) {
+    // NEU: Baut eine Wand aus 3 Teilen, um ein Loch für die Tür zu lassen
+    createDoorWall(z, totalH, wallMat, hasDoor) {
         const group = new THREE.Group();
         group.position.set(0, 0, z);
         if (z > 0) group.rotation.y = Math.PI;
 
-        // Wand - WICHTIG: Leicht nach hinten verschoben (-0.02)
-        // Das verhindert das Flackern mit dem Türrahmen
-        const wall = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), wallMat);
-        wall.position.set(0, totalH/2, -0.02); 
-        group.add(wall);
+        const doorW = 1.6; // Breite der Türöffnung
+        const doorH = 2.4; // Höhe der Türöffnung
+        const wallFullW = 5.0; // Gesamtbreite Wand
+        const wallFullH = 5.0; // Gesamthöhe Wand
+
+        // 1. Wand LINKS von der Tür
+        const w1 = (wallFullW - doorW) / 2;
+        const wallLeft = new THREE.Mesh(new THREE.PlaneGeometry(w1, wallFullH), wallMat);
+        wallLeft.position.set(-(doorW/2 + w1/2), totalH/2, 0);
+        group.add(wallLeft);
+
+        // 2. Wand RECHTS von der Tür
+        const wallRight = new THREE.Mesh(new THREE.PlaneGeometry(w1, wallFullH), wallMat);
+        wallRight.position.set((doorW/2 + w1/2), totalH/2, 0);
+        group.add(wallRight);
+
+        // 3. Wand OBEN über der Tür
+        const hTop = wallFullH - doorH;
+        // Achtung: Nur wenn Wand hoch genug ist. Wir nehmen einfach eine Blende oben.
+        const wallTop = new THREE.Mesh(new THREE.PlaneGeometry(doorW, 2.6), wallMat); // 2.6m hoch
+        wallTop.position.set(0, doorH + 1.3, 0); // Über der Tür
+        group.add(wallTop);
+
 
         if (hasDoor) {
-            // Rahmen beginnt bei z=0 und geht bis +0.2
-            const frame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.4, 0.2), new THREE.MeshStandardMaterial({color:0x333333}));
-            frame.position.set(0, 1.2, 0.1); // Mitte bei 0.1
+            // Türrahmen (Passt jetzt genau in das Loch)
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.1), new THREE.MeshStandardMaterial({color:0x333333}));
+            frame.position.set(0, doorH/2, 0); // Genau auf Ebene 0
             group.add(frame);
             
-            // Türblatt
-            const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.2, 0.1), new THREE.MeshStandardMaterial({color:0x555555}));
-            door.position.set(0, 1.2, 0.15); // Etwas weiter vorne als die Rahmenmitte
+            // Türblatt (Leicht vertieft)
+            const door = new THREE.Mesh(new THREE.BoxGeometry(doorW - 0.2, doorH - 0.2, 0.05), new THREE.MeshStandardMaterial({color:0x555555}));
+            door.position.set(0, doorH/2, 0.05); 
             group.add(door);
+        } else {
+            // Wenn keine Tür (am anderen Ende), füllen wir das Loch mit einer Wand
+            const filler = new THREE.Mesh(new THREE.PlaneGeometry(doorW, doorH), wallMat);
+            filler.position.set(0, doorH/2, 0);
+            group.add(filler);
         }
+
         this.scene.add(group);
     }
 
@@ -150,12 +151,8 @@ export class Environment {
         const canvas = document.createElement('canvas');
         canvas.width = 512; canvas.height = 512;
         const ctx = canvas.getContext('2d');
-        // Hellerer Hintergrund
-        ctx.fillStyle = '#999999'; 
-        ctx.fillRect(0,0,512,512);
-        // Dunklere Linien
-        ctx.strokeStyle = '#666666'; 
-        ctx.lineWidth = 5;
+        ctx.fillStyle = '#999999'; ctx.fillRect(0,0,512,512);
+        ctx.strokeStyle = '#666666'; ctx.lineWidth = 5;
         for(let i=0; i<=512; i+=64) {
             ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(512,i); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,512); ctx.stroke();

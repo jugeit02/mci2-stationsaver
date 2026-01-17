@@ -4,7 +4,7 @@ import { Environment } from './js/Environment.js';
 import { VRControls } from './js/VRControls.js';
 import { Pipe } from './js/Pipe.js';
 
-console.log("Station Saver VR v0.5 - Wave Pipes");
+console.log("Station Saver VR v0.6 - Smooth Joints");
 
 let hasSparePart = false;
 
@@ -32,68 +32,56 @@ renderer.xr.addEventListener('sessionend', () => document.getElementById('overla
 // --- SZENE ---
 const environment = new Environment(scene);
 
-// --- ROHR GENERATOR MIT HÖHEN-PROFIL ---
+// --- ROHR LOGIK ---
 const pipes = [];
 const startZ = -8.75;
 const segmentLength = 2.5;
-
-// Das Muster: 1 = Oben (Standard), 0 = Unten (Boden-nah)
-// Index:     0  1  2  3  4  5  6  7 
 const heightMap = [1, 1, 0, 0, 1, 1, 1, 1]; 
 
-// Die echten Höhen in Metern
 const HIGH_Y = 1.3;
-const LOW_Y = 0.5;
+// WICHTIG: Erhöht auf 0.75, damit es NICHT mehr in der Schräge steckt
+const LOW_Y = 0.75; 
 
-// Hilfsfunktion für vertikale Verbindungen
+// Neue Funktion für saubere Verbindungen mit Kugel-Gelenken
 function createVerticalConnector(x, yStart, yEnd, z) {
     const height = Math.abs(yEnd - yStart);
     const midY = (yStart + yEnd) / 2;
     
+    // Das vertikale Rohr
     const geo = new THREE.CylinderGeometry(0.07, 0.07, height, 16);
     const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.4, metalness: 0.6 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, midY, z);
-    
-    // Schwarze Ringe an den Enden des Vertikal-Stücks
-    const jointGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.05, 16);
-    const jointMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    
-    const topJoint = new THREE.Mesh(jointGeo, jointMat);
-    topJoint.position.y = height/2;
-    mesh.add(topJoint);
-    
-    const botJoint = new THREE.Mesh(jointGeo, jointMat);
-    botJoint.position.y = -height/2;
-    mesh.add(botJoint);
-
     scene.add(mesh);
+
+    // KUGEL-GELENKE (Oben und Unten)
+    // Radius 0.09 passt zur Muffe und ist dicker als das Rohr (0.07)
+    const jointGeo = new THREE.SphereGeometry(0.09, 16, 16);
+    const jointMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+
+    const topJoint = new THREE.Mesh(jointGeo, jointMat);
+    topJoint.position.set(x, yEnd, z); // Oben am Anschluss
+    scene.add(topJoint);
+
+    const botJoint = new THREE.Mesh(jointGeo, jointMat);
+    botJoint.position.set(x, yStart, z); // Unten am Anschluss
+    scene.add(botJoint);
 }
 
-// Wir gehen durch die 8 Segmente
 for (let i = 0; i < 8; i++) {
     const zPos = startZ + (i * segmentLength);
-    
-    // Höhe bestimmen
     const yLeft = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
-    // Für Rechts machen wir es vielleicht versetzt? Nein, symmetrisch sieht technischer aus.
     const yRight = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
 
-    // --- LINKE SEITE ---
-    // 1. Das horizontale Rohr
     pipes.push(new Pipe(scene, zPos, true, yLeft));
     
-    // 2. Verbindung zum VORGÄNGER prüfen (ab i=1)
     if (i > 0) {
         const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
-        // Wenn sich die Höhe geändert hat, brauchen wir ein vertikales Rohr
         if (prevY !== yLeft) {
-            // Verbindung sitzt genau am Anfang dieses Segments (zPos - 1.25)
             createVerticalConnector(-1.45, prevY, yLeft, zPos - 1.25);
         }
     }
 
-    // --- RECHTE SEITE ---
     pipes.push(new Pipe(scene, zPos, false, yRight));
     if (i > 0) {
         const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
@@ -103,8 +91,6 @@ for (let i = 0; i < 8; i++) {
     }
 }
 
-
-// Interaktions-Logik
 function onObjectClicked(object) {
     const pipeRef = object.userData.pipe; 
     if (object.name === 'spare_part') {
@@ -122,7 +108,6 @@ function onObjectClicked(object) {
 
 const controls = new VRControls(renderer, scene, cameraGroup, onObjectClicked);
 
-// Loop
 const clock = new THREE.Clock();
 let lastBreakTime = 0;
 
