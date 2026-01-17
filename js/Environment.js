@@ -3,6 +3,16 @@ import * as THREE from 'three';
 export class Environment {
     constructor(scene) {
         this.scene = scene;
+        
+        // Canvas für den Screen (Wir malen darauf wie in Paint)
+        this.screenCanvas = document.createElement('canvas');
+        this.screenCanvas.width = 512;
+        this.screenCanvas.height = 256;
+        this.screenContext = this.screenCanvas.getContext('2d');
+        
+        // Textur erstellen, die den Canvas nutzt
+        this.screenTexture = new THREE.CanvasTexture(this.screenCanvas);
+        
         this.init();
     }
 
@@ -31,15 +41,13 @@ export class Environment {
         const ribMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9 });
         
 
-        // --- 2. Maße ---
+        // --- 2. Tunnel Aufbau ---
         const floorW = 2.0;    
         const wallH = 1.6;     
         const slantS = 0.8;    
         const offset = slantS * 0.707; 
         const totalH = wallH + 2 * offset;
 
-
-        // --- 3. Tunnel ---
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, 20), floorMat);
         floor.rotation.x = -Math.PI / 2; 
         floor.name = 'floor'; 
@@ -67,8 +75,7 @@ export class Environment {
         wR.position.set((floorW/2 + offset), offset + wallH/2, 0);
         this.scene.add(wR);
 
-
-        // --- 4. Rippen ---
+        // Rippen
         const ribGeo = new THREE.TorusGeometry(2.1, 0.15, 4, 8); 
         for (let z = -10; z <= 10; z += 2.5) {
             const rib = new THREE.Mesh(ribGeo, ribMat);
@@ -77,9 +84,13 @@ export class Environment {
             this.scene.add(rib);
         }
 
-        // --- 5. ENDEN (Neu: Mit echter Lücke für die Tür) ---
-        this.createDoorWall(10, totalH, wallMat, true); // Tür-Seite
-        this.createDoorWall(-10, totalH, wallMat, false); // Geschlossene Seite
+        // Enden
+        this.createDoorWall(10, totalH, wallMat, true); // Tür
+        this.createDoorWall(-10, totalH, wallMat, false); // Wand
+        
+        // --- NEU: DER SCREEN ---
+        // Wir platzieren ihn an der Wand bei -10 (gegenüber der Tür)
+        this.createScreen(0, totalH/2, -9.95); // Leicht vor der Wand
 
         // Lichter
         for (let z = -8; z <= 8; z += 4) {
@@ -89,61 +100,113 @@ export class Environment {
         }
     }
 
+    createScreen(x, y, z) {
+        // 1. Rahmen
+        const frame = new THREE.Mesh(
+            new THREE.BoxGeometry(2.2, 1.4, 0.1),
+            new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.2 })
+        );
+        frame.position.set(x, y, z);
+        this.scene.add(frame);
+
+        // 2. Das Display (Leuchtet!)
+        const screenGeo = new THREE.PlaneGeometry(2.0, 1.2);
+        const screenMat = new THREE.MeshBasicMaterial({ 
+            map: this.screenTexture, // Unsere Canvas-Textur
+            color: 0xffffff
+        });
+        const screen = new THREE.Mesh(screenGeo, screenMat);
+        screen.position.set(0, 0, 0.06); // Vor dem Rahmen
+        frame.add(screen);
+
+        // Initiales Zeichnen
+        this.updateInfoScreen(120, 100);
+    }
+
+    // Diese Funktion rufen wir jeden Frame aus app.mjs auf
+    updateInfoScreen(timeLeft, oxygenLevel) {
+        const ctx = this.screenContext;
+        const w = this.screenCanvas.width;
+        const h = this.screenCanvas.height;
+
+        // Hintergrund (Dunkelblau/Schwarz Sci-Fi)
+        ctx.fillStyle = '#001122';
+        ctx.fillRect(0, 0, w, h);
+
+        // Rahmen-Linie
+        ctx.strokeStyle = '#00ffff';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(10, 10, w-20, h-20);
+
+        // Überschrift
+        ctx.font = '30px Arial';
+        ctx.fillStyle = '#00ffff';
+        ctx.textAlign = 'center';
+        ctx.fillText("STATION STATUS", w/2, 50);
+
+        // ZEIT (Rot wenn wenig Zeit)
+        ctx.font = 'bold 60px Courier New';
+        ctx.fillStyle = timeLeft < 30 ? '#ff3333' : '#ffffff';
+        const minutes = Math.floor(timeLeft / 60);
+        const seconds = Math.floor(timeLeft % 60).toString().padStart(2, '0');
+        ctx.fillText(`TIME: ${minutes}:${seconds}`, w/2, 130);
+
+        // SAUERSTOFF (Balken)
+        ctx.font = '30px Arial';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(`OXYGEN: ${Math.round(oxygenLevel)}%`, w/2, 190);
+
+        // Balken zeichnen
+        const barW = 300;
+        const barH = 20;
+        const barX = (w - barW) / 2;
+        const barY = 210;
+
+        // Leerer Balken
+        ctx.fillStyle = '#333333';
+        ctx.fillRect(barX, barY, barW, barH);
+        
+        // Füllung (Grün -> Rot)
+        ctx.fillStyle = oxygenLevel > 30 ? '#00ff00' : '#ff0000';
+        ctx.fillRect(barX, barY, barW * (oxygenLevel / 100), barH);
+
+        // WICHTIG: Three.js sagen, dass sich das Bild geändert hat
+        this.screenTexture.needsUpdate = true;
+    }
+
     addSlant(x, y, rotX, rotY, geo, mat) {
         const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(x, y, 0);
-        mesh.rotation.x = rotX;
-        mesh.rotation.y = rotY;
+        mesh.position.set(x, y, 0); mesh.rotation.x = rotX; mesh.rotation.y = rotY;
         this.scene.add(mesh);
     }
 
-    // NEU: Baut eine Wand aus 3 Teilen, um ein Loch für die Tür zu lassen
     createDoorWall(z, totalH, wallMat, hasDoor) {
         const group = new THREE.Group();
         group.position.set(0, 0, z);
         if (z > 0) group.rotation.y = Math.PI;
 
-        const doorW = 1.6; // Breite der Türöffnung
-        const doorH = 2.4; // Höhe der Türöffnung
-        const wallFullW = 5.0; // Gesamtbreite Wand
-        const wallFullH = 5.0; // Gesamthöhe Wand
-
-        // 1. Wand LINKS von der Tür
+        const doorW = 1.6; const doorH = 2.4; const wallFullW = 5.0; const wallFullH = 5.0;
         const w1 = (wallFullW - doorW) / 2;
+
         const wallLeft = new THREE.Mesh(new THREE.PlaneGeometry(w1, wallFullH), wallMat);
-        wallLeft.position.set(-(doorW/2 + w1/2), totalH/2, 0);
-        group.add(wallLeft);
+        wallLeft.position.set(-(doorW/2 + w1/2), totalH/2, 0); group.add(wallLeft);
 
-        // 2. Wand RECHTS von der Tür
         const wallRight = new THREE.Mesh(new THREE.PlaneGeometry(w1, wallFullH), wallMat);
-        wallRight.position.set((doorW/2 + w1/2), totalH/2, 0);
-        group.add(wallRight);
+        wallRight.position.set((doorW/2 + w1/2), totalH/2, 0); group.add(wallRight);
 
-        // 3. Wand OBEN über der Tür
-        const hTop = wallFullH - doorH;
-        // Achtung: Nur wenn Wand hoch genug ist. Wir nehmen einfach eine Blende oben.
-        const wallTop = new THREE.Mesh(new THREE.PlaneGeometry(doorW, 2.6), wallMat); // 2.6m hoch
-        wallTop.position.set(0, doorH + 1.3, 0); // Über der Tür
-        group.add(wallTop);
-
+        const wallTop = new THREE.Mesh(new THREE.PlaneGeometry(doorW, 2.6), wallMat);
+        wallTop.position.set(0, doorH + 1.3, 0); group.add(wallTop);
 
         if (hasDoor) {
-            // Türrahmen (Passt jetzt genau in das Loch)
             const frame = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.1), new THREE.MeshStandardMaterial({color:0x333333}));
-            frame.position.set(0, doorH/2, 0); // Genau auf Ebene 0
-            group.add(frame);
+            frame.position.set(0, doorH/2, 0); group.add(frame);
             
-            // Türblatt (Leicht vertieft)
             const door = new THREE.Mesh(new THREE.BoxGeometry(doorW - 0.2, doorH - 0.2, 0.05), new THREE.MeshStandardMaterial({color:0x555555}));
-            door.position.set(0, doorH/2, 0.05); 
-            group.add(door);
+            door.position.set(0, doorH/2, 0.05); group.add(door);
         } else {
-            // Wenn keine Tür (am anderen Ende), füllen wir das Loch mit einer Wand
             const filler = new THREE.Mesh(new THREE.PlaneGeometry(doorW, doorH), wallMat);
-            filler.position.set(0, doorH/2, 0);
-            group.add(filler);
+            filler.position.set(0, doorH/2, 0); group.add(filler);
         }
-
         this.scene.add(group);
     }
 
