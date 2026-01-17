@@ -2,16 +2,17 @@ import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 export class VRControls {
-    constructor(renderer, scene, cameraGroup) {
+    // onInteract ist eine Funktion, die wir von app.mjs übergeben bekommen
+    constructor(renderer, scene, cameraGroup, onInteract) {
         this.renderer = renderer;
         this.scene = scene;
-        this.cameraGroup = cameraGroup; // Die Gruppe, die verschoben wird (der Spieler)
+        this.cameraGroup = cameraGroup;
+        this.onInteract = onInteract; // Callback speichern
 
         this.controllers = [];
         this.raycaster = new THREE.Raycaster();
-        this.tempMatrix = new THREE.Matrix4(); // Hilfsvariable für Mathe
+        this.tempMatrix = new THREE.Matrix4();
         
-        // Der Ziel-Marker (Kreis am Boden)
         this.marker = this.createMarker();
         this.scene.add(this.marker);
 
@@ -19,94 +20,100 @@ export class VRControls {
     }
 
     createMarker() {
-        // Ein einfacher leuchtender Ring
         const geometry = new THREE.RingGeometry(0.15, 0.2, 32);
         const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
         const marker = new THREE.Mesh(geometry, material);
-        marker.rotation.x = -Math.PI / 2; // Flach auf den Boden
-        marker.visible = false; // Erst unsichtbar
+        marker.rotation.x = -Math.PI / 2; 
+        marker.visible = false; 
         return marker;
     }
 
     initControllers() {
         const controllerModelFactory = new XRControllerModelFactory();
 
-        // Es gibt Controller 0 (meist rechts) und 1 (meist links)
         for (let i = 0; i < 2; i++) {
             const controller = this.renderer.xr.getController(i);
             
-            // --- Event: Drücken (Select/Trigger) ---
-            controller.addEventListener('selectstart', () => {
-                this.onSelectStart(controller);
-            });
-            controller.addEventListener('selectend', () => {
-                this.onSelectEnd();
-            });
+            controller.addEventListener('selectstart', () => controller.userData.isSelecting = true);
+            
+            // WICHTIG: Hier entscheiden wir: Teleport oder Interaktion?
+            controller.addEventListener('selectend', () => this.handleSelect(controller));
 
-            this.scene.add(controller);
+            this.cameraGroup.add(controller); 
             this.controllers.push(controller);
 
-            // --- Visueller Strahl (Linie) ---
-            const lineGeo = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(0, 0, -5) // 5m lang
-            ]);
-            const line = new THREE.Line(lineGeo);
+            // Strahl
+            const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-5)]));
             line.scale.z = 1;
+            line.raycast = () => {}; 
             controller.add(line);
+            controller.userData.line = line;
 
-            // --- Controller Modell (Die Hände sehen) ---
+            // Modell
             const grip = this.renderer.xr.getControllerGrip(i);
             grip.add(controllerModelFactory.createControllerModel(grip));
-            this.scene.add(grip);
+            this.cameraGroup.add(grip);
         }
     }
 
-    onSelectStart(controller) {
-        this.activeController = controller; // Merken, welcher Controller drückt
-    }
+    handleSelect(controller) {
+        controller.userData.isSelecting = false;
 
-    onSelectEnd() {
-        // Wenn der Marker sichtbar ist -> TELEPORT!
+        // 1. Wenn Marker sichtbar -> TELEPORTIEREN
         if (this.marker.visible) {
-            // Wir setzen die Position der Kamera-Gruppe auf den Marker
-            const targetX = this.marker.position.x;
-            const targetZ = this.marker.position.z;
-
-            // Wichtig: Y (Höhe) nicht ändern, sonst steckt man im Boden!
-            this.cameraGroup.position.set(targetX, 0, targetZ);
+            this.cameraGroup.position.set(this.marker.position.x, 0, this.marker.position.z);
+            this.marker.visible = false;
+        } 
+        // 2. Wenn kein Marker, haben wir vielleicht ein Objekt getroffen?
+        else {
+            // Wir prüfen nochmal kurz, was der Strahl gerade trifft
+            this.tempMatrix.identity().extractRotation(controller.matrixWorld);
+            this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
+            
+            const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+            
+            // Wenn wir was treffen, das NICHT der Boden ist und nah genug ist
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                if (hit.object.name !== 'floor' && hit.distance < 3) {
+                    // Wir rufen die Funktion in app.mjs auf und sagen: "Hey, User hat auf [Objekt] geklickt!"
+                    if (this.onInteract) this.onInteract(hit.object);
+                }
+            }
         }
-        this.activeController = null;
-        this.marker.visible = false;
     }
 
     update() {
-        // Standardmäßig Marker verstecken
         this.marker.visible = false;
+        
+        this.controllers.forEach((controller) => {
+            const line = controller.userData.line;
+            line.scale.z = 5; 
 
-        // Wir nutzen den rechten Controller (Index 0) zum Zielen, oder den aktiven
-        const controller = this.controllers[0]; 
+            this.tempMatrix.identity().extractRotation(controller.matrixWorld);
+            this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
 
-        // Strahl berechnen
-        this.tempMatrix.identity().extractRotation(controller.matrixWorld);
-        this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-        this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
+            const intersects = this.raycaster.intersectObjects(this.scene.children, true);
 
-        // Prüfen: Trifft der Strahl irgendwas?
-        // Performance-Hack: Wir checken gegen ALLES in der Szene. 
-        // Sauberer wäre später nur gegen den Boden zu checken.
-        const intersects = this.raycaster.intersectObjects(this.scene.children);
-
-        if (intersects.length > 0) {
-            const hit = intersects[0];
-            
-            // Nur teleportieren, wenn wir den BODEN treffen (y ca. 0)
-            // oder wenn das Objekt "Boden" heißt. Hier prüfen wir einfach die Höhe.
-            if (hit.point.y < 0.5) {
-                this.marker.visible = true;
-                this.marker.position.copy(hit.point);
-                this.marker.position.y += 0.01; // Etwas über dem Boden schweben
+            for (let i = 0; i < intersects.length; i++) {
+                const hit = intersects[i];
+                
+                // Boden -> Marker zeigen
+                if (hit.object.name === 'floor') {
+                    line.scale.z = hit.distance;
+                    this.marker.visible = true;
+                    this.marker.position.copy(hit.point);
+                    this.marker.position.y += 0.02;
+                    return; 
+                } 
+                // Objekt (z.B. Rohr) -> Strahl stoppen, aber kein Marker
+                else if (hit.distance < 5 && hit.distance > 0.1) {
+                   line.scale.z = hit.distance;
+                   return; 
+                }
             }
-        }
+        });
     }
 }

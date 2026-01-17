@@ -7,142 +7,92 @@ export class Environment {
     }
 
     init() {
-        // --- 1. Helligkeit & Materialien (Nicht mehr düster!) ---
-        
-        // Viel stärkeres Grundlicht
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.9); 
+        // --- 1. Materialien (Viel Heller) ---
+        // Stärkeres Umgebungslicht
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.1); 
         this.scene.add(ambientLight);
 
         // Texturen
-        const spaceTexture = this.createSpaceTexture();
         const floorTexture = this.createGrateTexture();
         floorTexture.wrapS = THREE.RepeatWrapping;
         floorTexture.wrapT = THREE.RepeatWrapping;
-        floorTexture.repeat.set(2, 5);
+        floorTexture.repeat.set(2, 8);
 
-        // Materialien: Viel helleres Grau für alles
         const floorMat = new THREE.MeshStandardMaterial({ 
             map: floorTexture, 
-            color: 0xaaaaaa, // Hellgrau
-            roughness: 0.5, 
+            color: 0xaaaaaa, // Helleres Grau für den Boden
+            roughness: 0.7, 
             metalness: 0.4 
         });
 
         const wallMat = new THREE.MeshStandardMaterial({ 
-            color: 0xdddddd, // Fast Weißgrau
-            roughness: 0.4, 
+            color: 0xbbbbbb, // Helleres Grau für Wände
+            roughness: 0.5, 
+            metalness: 0.2, 
             side: THREE.DoubleSide 
         });
 
         const slantMat = new THREE.MeshStandardMaterial({ 
-            color: 0xbbbbbb, // Leicht dunklerer Akzent
-            roughness: 0.5,
+            color: 0x999999, // Mittleres Grau
+            roughness: 0.6, 
             side: THREE.DoubleSide
         });
 
-        const glassMat = new THREE.MeshPhysicalMaterial({ 
-            color: 0xaaddff, // Hellblaues Glas
-            transparent: true, opacity: 0.3, 
-            roughness: 0.1, metalness: 0.5, transmission: 0.6 
-        });
-
-        const ribMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5 });
-        const spaceMat = new THREE.MeshBasicMaterial({ map: spaceTexture });
-
-
-        // --- 2. Geometrie-Aufbau ---
-        const floorW = 2.0;
-        const wallH = 1.6;
-        const slantS = 0.8; 
+        const ribMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9 });
         
-        // Mathe für die Positionen (45 Grad)
+
+        // --- 2. Geometrie-Maße ---
+        const floorW = 2.0;    
+        const wallH = 1.6;     
+        const slantS = 0.8;    
         const offset = slantS * 0.707; 
         const totalH = wallH + 2 * offset;
-        const xWall = floorW / 2 + offset / 2;
 
 
-        // A) BODEN & DECKE (Wie vorher)
+        // --- 3. Der Tunnel-Bau ---
+        
+        // A) BODEN & DECKE
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, 20), floorMat);
-        floor.rotation.x = -Math.PI / 2;
+        floor.rotation.x = -Math.PI / 2; 
+        floor.name = 'floor'; 
         this.scene.add(floor);
 
         const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(floorW, 20), wallMat);
-        ceiling.rotation.x = Math.PI / 2;
+        ceiling.rotation.x = Math.PI / 2; 
         ceiling.position.y = totalH;
         this.scene.add(ceiling);
 
-        // B) SCHRÄGEN (Das Herzstück - Repariert)
+        // B) SCHRÄGEN
         const slantGeo = new THREE.PlaneGeometry(slantS, 20);
+        
+        // Oben
+        this.addSlant(-(floorW/2+offset/2), totalH-offset/2, Math.PI/2, Math.PI/4, slantGeo, slantMat);
+        this.addSlant( (floorW/2+offset/2), totalH-offset/2, Math.PI/2, -Math.PI/4, slantGeo, slantMat);
+        // Unten
+        this.addSlant(-(floorW/2+offset/2), offset/2, -Math.PI/2, Math.PI/4, slantGeo, slantMat);
+        this.addSlant( (floorW/2+offset/2), offset/2, -Math.PI/2, -Math.PI/4, slantGeo, slantMat);
 
-        // -- OBEN (Die funktionierten ja, also Logik von früher wiederhergestellt) --
-        // Oben Links
-        const sl_TL = new THREE.Mesh(slantGeo, slantMat);
-        sl_TL.position.set(-(floorW/2 + offset/2), totalH - offset/2, 0);
-        sl_TL.rotation.x = Math.PI / 2; // Von der Decke...
-        sl_TL.rotation.y = Math.PI / 4; // ...45 Grad runterklappen
-        this.scene.add(sl_TL);
+        // C) WÄNDE
+        const wGeo = new THREE.PlaneGeometry(wallH, 20); 
 
-        // Oben Rechts
-        const sl_TR = new THREE.Mesh(slantGeo, slantMat);
-        sl_TR.position.set((floorW/2 + offset/2), totalH - offset/2, 0);
-        sl_TR.rotation.x = Math.PI / 2;
-        sl_TR.rotation.y = -Math.PI / 4; 
-        this.scene.add(sl_TR);
+        // Links
+        const wL = new THREE.Mesh(wGeo, wallMat);
+        wL.rotation.y = Math.PI / 2; 
+        wL.rotation.z = Math.PI / 2; 
+        wL.position.set(-(floorW/2 + offset), offset + wallH/2, 0);
+        this.scene.add(wL);
 
-        // -- UNTEN (Die Sorgenkinder - Jetzt symmetrisch zu oben angepasst) --
-        // Unten Links
-        const sl_BL = new THREE.Mesh(slantGeo, slantMat);
-        sl_BL.position.set(-(floorW/2 + offset/2), offset/2, 0);
-        sl_BL.rotation.x = -Math.PI / 2; // Vom Boden...
-        sl_BL.rotation.y = -Math.PI / 4; // ...45 Grad hochklappen (Minus, weil Boden gedreht ist)
-        this.scene.add(sl_BL);
-
-        // Unten Rechts
-        const sl_BR = new THREE.Mesh(slantGeo, slantMat);
-        sl_BR.position.set((floorW/2 + offset/2), offset/2, 0);
-        sl_BR.rotation.x = -Math.PI / 2;
-        sl_BR.rotation.y = Math.PI / 4; 
-        this.scene.add(sl_BR);
+        // Rechts
+        const wR = new THREE.Mesh(wGeo, wallMat);
+        wR.rotation.y = -Math.PI / 2;
+        wR.rotation.z = Math.PI / 2;
+        wR.position.set((floorW/2 + offset), offset + wallH/2, 0);
+        this.scene.add(wR);
 
 
-        // C) WÄNDE & FENSTER (Modular)
-        const segmentLength = 2.5; 
-        const segments = 8;
-        const startZ = -8.75; 
+        // --- 4. Strukturen ---
 
-        for (let i = 0; i < segments; i++) {
-            const z = startZ + i * segmentLength;
-            const isWindow = (i === 2 || i === 5);
-
-            if (isWindow) {
-                // Fenster mit dickeren Rahmen
-                this.createDetailedWindow(z, segmentLength, wallH, xWall + offset/2, offset + wallH/2, true, ribMat, glassMat, spaceMat);
-                this.createDetailedWindow(z, segmentLength, wallH, -(xWall + offset/2), offset + wallH/2, false, ribMat, glassMat, spaceMat);
-            } else {
-                // Normale Wand
-                const wGeo = new THREE.PlaneGeometry(wallH, segmentLength);
-                
-                // Links (Drehung angepasst, damit sie glatt steht)
-                const wL = new THREE.Mesh(wGeo, wallMat);
-                wL.rotation.y = Math.PI / 2;
-                wL.rotation.z = Math.PI / 2; 
-                wL.position.set(-(floorW/2 + offset), offset + wallH/2, z);
-                this.scene.add(wL);
-
-                // Rechts
-                const wR = new THREE.Mesh(wGeo, wallMat);
-                wR.rotation.y = -Math.PI / 2;
-                wR.rotation.z = Math.PI / 2;
-                wR.position.set((floorW/2 + offset), offset + wallH/2, z);
-                this.scene.add(wR);
-            }
-        }
-
-        // --- 3. Enden & Details ---
-        this.createDoorEnd(10, totalH, wallMat, ribMat);
-        this.createWindowEnd(-10, totalH, ribMat, glassMat, spaceMat);
-
-        // Rippen (Achteckige Rahmen)
+        // Rippen
         const ribGeo = new THREE.TorusGeometry(2.1, 0.15, 4, 8); 
         for (let z = -10; z <= 10; z += 2.5) {
             const rib = new THREE.Mesh(ribGeo, ribMat);
@@ -151,117 +101,62 @@ export class Environment {
             this.scene.add(rib);
         }
 
+        // Enden
+        this.createWallEnd(10, totalH, wallMat, true); // Tür
+        this.createWallEnd(-10, totalH, wallMat, false); // Wand
+
         // Lichter
-        for (let z = -8; z <= 8; z += 5) {
-             const pl = new THREE.PointLight(0xffffff, 0.5, 12); // Reichweite erhöht
+        for (let z = -8; z <= 8; z += 4) {
+             const pl = new THREE.PointLight(0xffffff, 0.5, 10);
              pl.position.set(0, totalH - 0.5, z);
              this.scene.add(pl);
         }
     }
 
-    // --- HELPER FUNKTIONEN (Fenster & Texturen) ---
-
-    createDetailedWindow(z, length, height, x, y, isRight, frameMat, glassMat, spaceMat) {
-        const group = new THREE.Group();
-        group.position.set(x, y, z);
-        if (!isRight) group.rotation.y = Math.PI;
-
-        // Rahmen
-        const t = 0.15; // Dicke
-        const w = 0.3;  // Tiefe
-        
-        // Oben/Unten
-        const top = new THREE.Mesh(new THREE.BoxGeometry(w, t, length), frameMat);
-        top.position.y = height/2 - t/2;
-        group.add(top);
-        
-        const bot = new THREE.Mesh(new THREE.BoxGeometry(w, t, length), frameMat);
-        bot.position.y = -height/2 + t/2;
-        group.add(bot);
-
-        // Pfosten
-        const post = new THREE.Mesh(new THREE.BoxGeometry(w, height, t), frameMat);
-        post.position.z = length/2 - t/2;
-        group.add(post);
-        
-        const post2 = new THREE.Mesh(new THREE.BoxGeometry(w, height, t), frameMat);
-        post2.position.z = -length/2 + t/2;
-        group.add(post2);
-
-        // Glas
-        const glass = new THREE.Mesh(new THREE.PlaneGeometry(length - 0.2, height - 0.2), glassMat);
-        glass.rotation.y = -Math.PI / 2;
-        group.add(glass);
-
-        // Weltraum dahinter
-        const space = new THREE.Mesh(new THREE.PlaneGeometry(length+1, height+1), spaceMat);
-        space.rotation.y = -Math.PI / 2;
-        space.position.x = 2; // Abstand
-        group.add(space);
-
-        this.scene.add(group);
+    addSlant(x, y, rotX, rotY, geo, mat) {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(x, y, 0);
+        mesh.rotation.x = rotX;
+        mesh.rotation.y = rotY;
+        this.scene.add(mesh);
     }
 
-    createWindowEnd(z, totalH, frameMat, glassMat, spaceMat) {
-        const group = new THREE.Group();
-        group.position.set(0, totalH/2, z); 
-        if (z > 0) group.rotation.y = Math.PI;
-
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(4.2, 3.2, 0.4), frameMat);
-        group.add(frame);
-        const glass = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 2.8), glassMat);
-        glass.position.z = -0.1;
-        group.add(glass);
-        const space = new THREE.Mesh(new THREE.PlaneGeometry(15, 10), spaceMat);
-        space.position.z = -4; 
-        group.add(space);
-        this.scene.add(group);
-    }
-
-    createDoorEnd(z, totalH, wallMat, frameMat) {
+    createWallEnd(z, totalH, wallMat, hasDoor) {
         const group = new THREE.Group();
         group.position.set(0, 0, z);
-        group.rotation.y = Math.PI;
+        if (z > 0) group.rotation.y = Math.PI;
 
-        // Wand
+        // Wand - WICHTIG: Leicht nach hinten verschoben (-0.02)
+        // Das verhindert das Flackern mit dem Türrahmen
         const wall = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), wallMat);
-        wall.position.set(0, totalH/2, 0.1);
+        wall.position.set(0, totalH/2, -0.02); 
         group.add(wall);
 
-        // Rahmen & Tür
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.4, 0.3), frameMat);
-        frame.position.set(0, 1.2, 0); 
-        group.add(frame);
-        const door = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.2, 0.1), new THREE.MeshStandardMaterial({color: 0x555555}));
-        door.position.set(0, 1.2, -0.1);
-        group.add(door);
-
-        this.scene.add(group);
-    }
-
-    createSpaceTexture() {
-        const canvas = document.createElement('canvas');
-        canvas.width = 512; canvas.height = 512;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = 'black'; ctx.fillRect(0,0,512,512);
-        ctx.fillStyle = 'white';
-        for(let i=0; i<400; i++) {
-            const x = Math.random() * 512; y = Math.random() * 512;
-            const r = Math.random() * 1.5;
-            ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+        if (hasDoor) {
+            // Rahmen beginnt bei z=0 und geht bis +0.2
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.4, 0.2), new THREE.MeshStandardMaterial({color:0x333333}));
+            frame.position.set(0, 1.2, 0.1); // Mitte bei 0.1
+            group.add(frame);
+            
+            // Türblatt
+            const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.2, 0.1), new THREE.MeshStandardMaterial({color:0x555555}));
+            door.position.set(0, 1.2, 0.15); // Etwas weiter vorne als die Rahmenmitte
+            group.add(door);
         }
-        return new THREE.CanvasTexture(canvas);
+        this.scene.add(group);
     }
 
     createGrateTexture() {
         const canvas = document.createElement('canvas');
         canvas.width = 512; canvas.height = 512;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#bbbbbb'; // Viel Heller
+        // Hellerer Hintergrund
+        ctx.fillStyle = '#999999'; 
         ctx.fillRect(0,0,512,512);
-        ctx.strokeStyle = '#888888'; 
-        ctx.lineWidth = 4;
-        for(let i=0; i<=512; i+=32) {
+        // Dunklere Linien
+        ctx.strokeStyle = '#666666'; 
+        ctx.lineWidth = 5;
+        for(let i=0; i<=512; i+=64) {
             ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(512,i); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,512); ctx.stroke();
         }
