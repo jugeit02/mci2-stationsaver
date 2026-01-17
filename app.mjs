@@ -1,73 +1,61 @@
 import * as THREE from 'three';
-// Wir brauchen den VRButton aus den Addons, die dein Prof auch definiert hat
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-console.log("ThreeJs Version: " + THREE.REVISION);
+// Unsere neuen Module importieren
+import { Environment } from './js/Environment.js';
+import { VRControls } from './js/VRControls.js';
 
-const width = window.innerWidth;
-const height = window.innerHeight;
+console.log("Station Saver VR v0.1");
 
-// --- INIT ---
-
+// --- SETUP ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x333333); // Dunkelgrau für Korridor
+scene.background = new THREE.Color(0x111111); // Sehr dunkel
+// Nebel, damit das Ende des Tunnels weich aussieht
+scene.fog = new THREE.Fog(0x111111, 0, 25); 
 
-const camera = new THREE.PerspectiveCamera(70, width / height, 0.01, 100);
-// In VR ist die Kamera-Position eigentlich egal (das Headset steuert sie), 
-// aber für den Browser setzen wir sie auf Kopfhöhe.
-camera.position.set(0, 1.6, 3);
+// Kamera-Gruppe (Dolly) - Wichtig für Teleportation!
+// Wir verschieben nicht die Kamera selbst, sondern den "Wagen" (Group), auf dem sie steht.
+const cameraGroup = new THREE.Group();
+scene.add(cameraGroup);
 
-// Lichter (wie beim Prof, aber heller für unseren Raum)
-scene.add(new THREE.HemisphereLight(0x808080, 0x606060));
-const light = new THREE.DirectionalLight(0xffffff);
-light.position.set(0, 2, 0);
-scene.add(light);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.6, 0); // Start-Höhe
+cameraGroup.add(camera);
 
-// Ein Test-Würfel (damit wir sehen, dass es klappt)
-const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
-const material = new THREE.MeshNormalMaterial();
-const cube = new THREE.Mesh(geometry, material);
-cube.position.set(0, 1.6, -1); // Schwebt vor deinem Gesicht
-scene.add(cube);
-
-// Hilfsgitter am Boden
-const grid = new THREE.GridHelper(10, 10);
-scene.add(grid);
-
-// Renderer Setup
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(width, height);
-renderer.xr.enabled = true; // WICHTIG: VR aktivieren!
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true; // VR an!
 document.body.appendChild(renderer.domElement);
 
-// VR Button ins Menü einfügen
-const buttonContainer = document.getElementById('vr-button-container');
-if(buttonContainer) {
-    buttonContainer.appendChild(VRButton.createButton(renderer));
-}
+// VR Button
+document.getElementById('vr-button-container').appendChild(VRButton.createButton(renderer));
 
-// Menü ausblenden, wenn VR startet
-renderer.xr.addEventListener('sessionstart', () => {
-    document.getElementById('overlay').style.display = 'none';
-});
-renderer.xr.addEventListener('sessionend', () => {
-    document.getElementById('overlay').style.display = 'flex';
-});
+// UI Overlay Logik
+renderer.xr.addEventListener('sessionstart', () => document.getElementById('overlay').style.display = 'none');
+renderer.xr.addEventListener('sessionend', () => document.getElementById('overlay').style.display = 'flex');
 
-// Animations-Loop (startet automatisch)
-renderer.setAnimationLoop(animate);
 
-// --- ANIMATION ---
+// --- UNSERE SPIEL-MODULE ---
 
-function animate(time) {
-    // Würfel drehen
-    cube.rotation.x = time / 2000;
-    cube.rotation.y = time / 1000;
+// 1. Umgebung bauen
+const environment = new Environment(scene);
+
+// 2. Steuerung aktivieren
+// Wir übergeben cameraGroup, damit der Spieler bewegt werden kann
+const controls = new VRControls(renderer, scene, cameraGroup);
+
+
+// --- LOOP ---
+renderer.setAnimationLoop(render);
+
+function render() {
+    // Steuerung updaten (für den Raycaster/Zielstrahl)
+    if (controls) controls.update();
 
     renderer.render(scene, camera);
 }
 
-// Fenstergröße anpassen
+// Resize Handler
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
