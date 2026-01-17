@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="shortcut icon" href="favicon.ico" />
+    <title>Station Saver VR</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link type="text/css" rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="overlay">
+        <div class="menu">
+            <h1>STATION SAVER</h1>
+            <p>Bitte Brille aufsetzen & verbinden</p>
+            <div id="vr-button-container"></div>
+        </div>
+    </div>
+
+    <script type="importmap"> 
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/"
+        }
+    } 
+    </script>
+
+    <script type="module" src="app.mjs"></script>
+</body>
+</html>
