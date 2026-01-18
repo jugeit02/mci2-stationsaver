@@ -6,26 +6,14 @@ export class Pipe {
         this.isBroken = false;
         this.isVertical = isVertical; 
         
-        let xPos, yPos, zPos;
-
-        if (isVertical) {
-            xPos = isLeftWall ? -1.45 : 1.45;
-            yPos = heightY; 
-            zPos = positionZ;
-        } else {
-            xPos = isLeftWall ? -1.45 : 1.45;
-            yPos = heightY;
-            zPos = positionZ;
-        }
+        const xPos = isLeftWall ? -1.45 : 1.45;
+        const yPos = heightY; 
         
         this.group = new THREE.Group();
-        this.group.position.set(xPos, yPos, zPos);
+        this.group.position.set(xPos, yPos, positionZ);
         
-        if (isVertical) {
-            // Vertikal: Keine Y-Rotation der Gruppe nötig
-        } else {
-            // Horizontal: Umdrehen für rechte Seite
-            if (!isLeftWall) this.group.rotation.y = Math.PI;
+        if (!isLeftWall) {
+            this.group.rotation.y = Math.PI;
         }
 
         this.init();
@@ -73,13 +61,10 @@ export class Pipe {
 
         // 4. ERSATZTEIL
         this.spareGroup = new THREE.Group();
-        
-        // Startposition: Sicher auf dem Boden
-        const randomZ = (Math.random() - 0.5) * 1.0; // Etwas weniger Streuung (1.0 statt 1.5)
+        const randomZ = (Math.random() - 0.5) * 1.0; 
         this.spareGroup.position.set(1.0, -this.group.position.y + 0.05, randomZ);
         this.spareGroup.rotation.y = Math.random() * Math.PI;
         this.spareGroup.visible = false;
-        
         this.group.add(this.spareGroup);
 
         const spareMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8, metalness: 0.2 });
@@ -97,8 +82,9 @@ export class Pipe {
 
         // 5. Dampf
         this.createSteam();
-        this.steam.rotation.z = Math.PI / 2; 
-        innerGroup.add(this.steam);
+        this.steam.position.set(0,0,0);
+        this.steam.rotation.set(0,0, -Math.PI/2); 
+        this.group.add(this.steam);
     }
 
     createSteam() {
@@ -113,8 +99,12 @@ export class Pipe {
         geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         geo.userData = { speeds: speeds };
         const mat = new THREE.PointsMaterial({
-            color: 0xdddddd, size: 0.15, transparent: true, opacity: 0.0,
-            blending: THREE.AdditiveBlending, depthWrite: false
+            color: 0xdddddd, 
+            size: 0.12, // Kleiner (vorher 0.15)
+            transparent: true, 
+            opacity: 0.0,
+            blending: THREE.AdditiveBlending, 
+            depthWrite: false
         });
         this.steam = new THREE.Points(geo, mat);
     }
@@ -123,11 +113,10 @@ export class Pipe {
         if (this.isBroken) return;
         this.isBroken = true;
         this.healthyPart.visible = false;
-        
-        // Beim Brechen: Sicherstellen, dass es auf dem Boden spawnt (nicht irgendwo anders)
         this.respawnPart(); 
         
-        this.steam.material.opacity = 0.4;
+        // WENIGER DAMPF: Opacity runter auf 0.15 (vorher 0.4)
+        this.steam.material.opacity = 0.15;
     }
 
     pickupPart() {
@@ -138,17 +127,10 @@ export class Pipe {
         return false;
     }
 
-    // --- FIX: SICHERER RESPAWN ---
-    // Wir ignorieren die Controller-Position und setzen es immer sicher zurück
     respawnPart() {
-        // Local X = 1.0 (Richtung Raummitte)
-        // Local Y = Bodenhöhe
-        // Local Z = Zufall um die Mitte
         const randomZ = (Math.random() - 0.5) * 1.0; 
-        
         this.spareGroup.position.set(1.0, -this.group.position.y + 0.05, randomZ);
         this.spareGroup.rotation.y = Math.random() * Math.PI;
-        
         this.spareGroup.visible = true;
     }
 
