@@ -5,10 +5,7 @@ export class Pipe {
         this.scene = scene;
         this.isBroken = false;
         
-        // Position: 1.45m ist nah an der Wand
         const xPos = isLeftWall ? -1.45 : 1.45;
-        
-        // NEU: Die Höhe kommt jetzt von außen (für das Hoch/Runter Muster)
         const yPos = heightY; 
         
         this.group = new THREE.Group();
@@ -42,7 +39,7 @@ export class Pipe {
         this.group.add(jStart);
 
         // 2. Trigger
-        const gapBox = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), new THREE.MeshBasicMaterial({visible:false}));
+        const gapBox = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.5), new THREE.MeshBasicMaterial({visible:false}));
         gapBox.name = 'pipe_gap'; gapBox.userData = { pipe: this };
         this.group.add(gapBox);
 
@@ -51,25 +48,29 @@ export class Pipe {
         this.healthyPart.rotation.x = Math.PI / 2;
         this.group.add(this.healthyPart);
 
-        // 4. ERSATZTEIL (Position gefixed)
+        // 4. ERSATZTEIL
+        this.spareGroup = new THREE.Group();
+        
+        // Zufällige Startposition
+        const randomZ = (Math.random() - 0.5) * 1.5; 
+        this.spareGroup.position.set(1.0, -this.group.position.y + 0.05, randomZ);
+        this.spareGroup.rotation.y = Math.random() * Math.PI;
+        this.spareGroup.visible = false;
+        this.group.add(this.spareGroup);
+
+        // Visual & Hitbox
         const spareMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8, metalness: 0.2 });
-        this.sparePart = new THREE.Mesh(middleGeo, spareMat);
-        this.sparePart.rotation.z = Math.PI / 2;
-        this.sparePart.rotation.y = Math.random() * Math.PI; // Zufällige Drehung sieht natürlicher aus
-        
-        // RECHNUNG FÜR POSITION:
-        // Local X = 1.0 bedeutet: 1.45 (Wand) - 1.0 = 0.45 (Welt).
-        // Das ist schön mittig auf dem Gitter (Boden geht bis 1.0). Keine Schrägen-Kollision mehr!
-        // Local Y: Rohr ist auf Höhe Y. Boden ist 0. Also muss es -Y runter.
-        // Local Z: Zufall zwischen -1.0 und 1.0, damit es nicht direkt unterm Leck liegt.
-        
-        const randomZ = (Math.random() - 0.5) * 1.5; // Zufallversatz entlang des Weges
-        this.sparePart.position.set(1.0, -this.group.position.y + 0.05, randomZ); 
-        
-        this.sparePart.name = 'spare_part';
-        this.sparePart.userData = { pipe: this };
-        this.sparePart.visible = false;
-        this.group.add(this.sparePart);
+        const visualPart = new THREE.Mesh(middleGeo, spareMat);
+        visualPart.rotation.z = Math.PI / 2;
+        visualPart.name = 'spare_part';       
+        visualPart.userData = { pipe: this }; 
+        this.spareGroup.add(visualPart);
+
+        const hitBoxMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.0, depthWrite: false });
+        const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.7), hitBoxMat);
+        hitBox.name = 'spare_part'; 
+        hitBox.userData = { pipe: this }; 
+        this.spareGroup.add(hitBox);
 
         // 5. Dampf
         this.createSteam();
@@ -99,15 +100,33 @@ export class Pipe {
         if (this.isBroken) return;
         this.isBroken = true;
         this.healthyPart.visible = false;
-        this.sparePart.visible = true;
+        this.spareGroup.visible = true; 
         this.steam.material.opacity = 0.4;
     }
 
     pickupPart() {
-        if (this.sparePart.visible) {
-            this.sparePart.visible = false; return true; 
+        if (this.spareGroup.visible) {
+            this.spareGroup.visible = false; 
+            return true; 
         }
         return false;
+    }
+
+    // --- NEU: FALLENLASSEN ---
+    respawnPart(worldPosition) {
+        // Wir müssen die Welt-Position (wo der Controller ist) in die lokale Position der Pipe umrechnen
+        // Damit das Teil relativ zur Pipe richtig liegt.
+        this.group.worldToLocal(this.spareGroup.position.copy(worldPosition));
+        
+        // Aber: Es soll auf dem BODEN liegen (Y-Achse resetten)
+        // Pipe hängt auf Y, Boden ist bei -Y.
+        // Wir setzen Y hart auf Bodenhöhe relativ zur Pipe
+        this.spareGroup.position.y = -this.group.position.y + 0.05; 
+        
+        // Zufällige Rotation beim Fallenlassen
+        this.spareGroup.rotation.y = Math.random() * Math.PI;
+
+        this.spareGroup.visible = true;
     }
 
     repair() {

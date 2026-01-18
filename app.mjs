@@ -4,16 +4,15 @@ import { Environment } from './js/Environment.js';
 import { VRControls } from './js/VRControls.js';
 import { Pipe } from './js/Pipe.js';
 
-console.log("Station Saver VR v0.7 - UI Screen");
+console.log("Station Saver VR v1.2 - Floating Pipe");
 
 let hasSparePart = false;
 
 // --- GAME STATS ---
-let timeLeft = 120.0; // 2 Minuten
+let timeLeft = 180.0;
 let oxygen = 100.0;
 let isGameOver = false;
 
-// --- SETUP ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 scene.fog = new THREE.Fog(0x111111, 0, 15); 
@@ -29,15 +28,11 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true; 
 document.body.appendChild(renderer.domElement);
 document.getElementById('vr-button-container').appendChild(VRButton.createButton(renderer));
-
 renderer.xr.addEventListener('sessionstart', () => document.getElementById('overlay').style.display = 'none');
 renderer.xr.addEventListener('sessionend', () => document.getElementById('overlay').style.display = 'flex');
 
-
-// --- SZENE ---
 const environment = new Environment(scene);
 
-// --- ROHRE ---
 const pipes = [];
 const startZ = -8.75;
 const segmentLength = 2.5;
@@ -48,13 +43,11 @@ const LOW_Y = 0.75;
 function createVerticalConnector(x, yStart, yEnd, z) {
     const height = Math.abs(yEnd - yStart);
     const midY = (yStart + yEnd) / 2;
-    
     const geo = new THREE.CylinderGeometry(0.07, 0.07, height, 16);
     const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.4, metalness: 0.6 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, midY, z);
     scene.add(mesh);
-
     const jointGeo = new THREE.SphereGeometry(0.09, 16, 16);
     const jointMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
     const topJoint = new THREE.Mesh(jointGeo, jointMat);
@@ -67,13 +60,11 @@ for (let i = 0; i < 8; i++) {
     const zPos = startZ + (i * segmentLength);
     const yLeft = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
     const yRight = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
-
     pipes.push(new Pipe(scene, zPos, true, yLeft));
     if (i > 0) {
         const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
         if (prevY !== yLeft) createVerticalConnector(-1.45, prevY, yLeft, zPos - 1.25);
     }
-
     pipes.push(new Pipe(scene, zPos, false, yRight));
     if (i > 0) {
         const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
@@ -81,68 +72,114 @@ for (let i = 0; i < 8; i++) {
     }
 }
 
-function onObjectClicked(object) {
-    if (isGameOver) return; // Nichts mehr tun wenn Game Over
+// --- ROTATIONS CHECK HELPER (UPDATED) ---
+function isAligned(controller) {
+    // Da das Rohr jetzt QUER (Local X) gehalten wird, 
+    // müssen wir schauen, wohin die X-Achse des Controllers zeigt.
+    
+    // 1. Lokale X-Achse (Rechts)
+    const controllerSideways = new THREE.Vector3(1, 0, 0);
+    controllerSideways.applyQuaternion(controller.quaternion); 
 
-    const pipeRef = object.userData.pipe; 
-    if (object.name === 'spare_part') {
-        if (!hasSparePart && pipeRef.pickupPart()) {
-            hasSparePart = true;
+    // 2. Wand-Rohre verlaufen entlang der Welt-Z-Achse (0, 0, 1)
+    const pipeDir = new THREE.Vector3(0, 0, 1);
+
+    // 3. Winkel berechnen
+    const angle = controllerSideways.angleTo(pipeDir);
+    
+    // 4. Toleranz (30 Grad)
+    const tolerance = THREE.MathUtils.degToRad(30); 
+
+    // Parallel (0 Grad) ODER Anti-Parallel (180 Grad) ist beides ok
+    const isAlignedZ = angle < tolerance || angle > (Math.PI - tolerance);
+
+    return isAlignedZ;
+}
+
+
+function onInteract(object, actionType, controller) {
+    if (isGameOver) return;
+
+    if (actionType === 'start') {
+        if (object && object.name === 'spare_part') {
+            const pipeRef = object.userData.pipe;
+            if (!controller.userData.hasPart && pipeRef.pickupPart()) {
+                controller.userData.hasPart = true;
+                controller.userData.heldPipeRef = pipeRef; 
+                controls.pickupPart(controller); 
+            }
         }
     }
-    if (object.name === 'pipe_gap') {
-        if (hasSparePart && pipeRef.isBroken) {
-            pipeRef.repair();
-            hasSparePart = false;
-            // Kleiner Bonus: Sauerstoff etwas auffüllen?
-            oxygen = Math.min(100, oxygen + 5); 
+
+    if (actionType === 'end') {
+        if (controller.userData.hasPart) {
+            
+            // Reparatur nur, wenn Winkel stimmt!
+            if (object && object.name === 'pipe_gap') {
+                const targetPipe = object.userData.pipe;
+                if (targetPipe.isBroken && isAligned(controller)) { 
+                    targetPipe.repair();
+                    oxygen = Math.min(100, oxygen + 10); 
+                    controller.userData.hasPart = false;
+                    controller.userData.heldPipeRef = null;
+                    controls.dropPart(controller);
+                    return;
+                }
+            }
+
+            // Fallenlassen
+            const originalPipe = controller.userData.heldPipeRef;
+            if (originalPipe) originalPipe.respawnPart(controller.position);
+            
+            controller.userData.hasPart = false; 
+            controller.userData.heldPipeRef = null;
+            controls.dropPart(controller);
         }
     }
 }
 
-const controls = new VRControls(renderer, scene, cameraGroup, onObjectClicked);
+const controls = new VRControls(renderer, scene, cameraGroup, onInteract);
 
-// Loop
 const clock = new THREE.Clock();
 let lastBreakTime = 0;
 
 renderer.setAnimationLoop(() => {
-    const delta = clock.getDelta(); // Zeit seit letztem Frame in Sekunden
+    const delta = clock.getDelta();
     const time = clock.getElapsedTime();
 
     if (!isGameOver) {
-        // 1. Zeit runterzählen
         timeLeft -= delta;
-
-        // 2. Anzahl kaputter Rohre zählen
         let brokenCount = 0;
         pipes.forEach(p => { if(p.isBroken) brokenCount++; });
-
-        // 3. Sauerstoff berechnen
-        // Basis-Verlust: 0.5 pro Sekunde
-        // Pro kaputtes Rohr: +1.5 pro Sekunde
-        const lossRate = 0.5 + (brokenCount * 1.5);
+        const lossRate = 0.2 + (brokenCount * 0.8);
         oxygen -= lossRate * delta;
 
-        // Game Over Bedingungen
         if (timeLeft <= 0 || oxygen <= 0) {
             isGameOver = true;
             oxygen = Math.max(0, oxygen);
             timeLeft = Math.max(0, timeLeft);
-            // Optional: Hier könnte man den Screen rot färben
         }
 
-        // 4. Rohre kaputt machen (Generator)
-        if (time - lastBreakTime > 6) { 
+        if (time - lastBreakTime > 12) { 
             lastBreakTime = time;
             const randomPipe = pipes[Math.floor(Math.random() * pipes.length)];
             randomPipe.breakPipe();
         }
-
-        // 5. Screen Update
-        // Wir übergeben die Werte an Environment, damit es den Canvas malt
         environment.updateInfoScreen(timeLeft, oxygen);
     }
+
+    // Visuelles Feedback
+    controls.controllers.forEach(controller => {
+        if (controller.userData.hasPart && controller.userData.hoveredObject?.name === 'pipe_gap') {
+            if (isAligned(controller)) {
+                controls.setPartColor(controller, 0x00ff00); // Grün
+            } else {
+                controls.setPartColor(controller, 0xff0000); // Rot
+            }
+        } else {
+            controls.setPartColor(controller, 0x444444);
+        }
+    });
 
     if (controls) controls.update();
     pipes.forEach(pipe => pipe.update());
