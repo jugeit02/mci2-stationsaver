@@ -5,10 +5,10 @@ import { VRControls } from './js/VRControls.js';
 import { Pipe } from './js/Pipe.js';
 import { GameMenu } from './js/GameMenu.js'; 
 
-console.log("Station Saver VR v2.3 - Dynamic Difficulty");
+console.log("Station Saver VR v2.4 - Final Polish");
 
 let gameState = 'MENU'; 
-let timeLeft = 120.0; // GEÄNDERT: 2 Minuten
+let timeLeft = 120.0;
 let oxygen = 100.0;
 
 const scene = new THREE.Scene();
@@ -56,7 +56,6 @@ function createVerticalConnector(x, yStart, yEnd, z) {
 function addVerticalPipe(x, yStart, yEnd, z, isLeft) {
     const midY = (yStart + yEnd) / 2;
     pipes.push(new Pipe(scene, z, isLeft, midY, true));
-    
     const jointGeo = new THREE.SphereGeometry(0.075, 16, 16);
     const jointMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
     const topJoint = new THREE.Mesh(jointGeo, jointMat);
@@ -84,9 +83,10 @@ for (let i = 0; i < 8; i++) {
 }
 
 function startGame() {
-    timeLeft = 120.0; // GEÄNDERT: 2 Minuten
+    timeLeft = 120.0;
     oxygen = 100.0;
     
+    // Reset beim Start
     pipes.forEach(p => {
         p.repair();
         if (p.spareGroup) p.spareGroup.visible = false;
@@ -96,7 +96,6 @@ function startGame() {
     menu.hide();
     gameState = 'PLAYING';
     
-    // Kleiner Initial-Delay
     setTimeout(() => {
         if(gameState === 'PLAYING') pipes[Math.floor(Math.random() * pipes.length)].breakPipe();
     }, 2000);
@@ -105,11 +104,21 @@ function startGame() {
 function endGame(win, reason) {
     gameState = win ? 'WIN' : 'GAMEOVER';
     cameraGroup.position.set(0, 0, 0);
+    
+    // 1. Controller leeren
     controls.controllers.forEach(c => {
         c.userData.hasPart = false;
         c.userData.heldPipeRef = null;
         controls.dropPart(c);
     });
+
+    // 2. ALLE PIPES REPARIEREN (Cleanup für den Hintergrund)
+    // Damit beim Game Over Screen nicht noch Dampf zischt
+    pipes.forEach(p => {
+        p.repair();
+        if (p.spareGroup) p.spareGroup.visible = false;
+    });
+
     if (win) menu.showWin(oxygen);
     else menu.showGameOver(reason);
 }
@@ -201,20 +210,18 @@ renderer.setAnimationLoop(() => {
             const lossRate = 0.5 + (brokenCount * 1.0);
             oxygen -= lossRate * delta;
         } else {
-            oxygen += 5.0 * delta; 
+            // Regeneration verlangsamt auf 2.0 (vorher 5.0)
+            oxygen += 2.0 * delta; 
         }
         oxygen = Math.min(100, oxygen);
 
         if (oxygen <= 0) endGame(false, "OXYGEN DEPLETED");
         else if (timeLeft <= 0) endGame(true, "TIME UP - YOU SURVIVED");
 
-        // --- SCHWIERIGKEITSKURVE ---
-        // Zeit gespielt: Gesamtzeit (120) - Restzeit
         const timePlayed = 120.0 - timeLeft;
-        let spawnInterval = 8; // Standard (0-40s)
-        
-        if (timePlayed > 40) spawnInterval = 7; // Phase 2 (40-80s)
-        if (timePlayed > 80) spawnInterval = 6; // Phase 3 (80-120s)
+        let spawnInterval = 8; 
+        if (timePlayed > 40) spawnInterval = 7; 
+        if (timePlayed > 80) spawnInterval = 6; 
 
         if (time - lastBreakTime > spawnInterval) { 
             lastBreakTime = time;
