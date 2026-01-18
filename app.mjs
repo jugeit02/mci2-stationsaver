@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { Environment } from './js/Environment.js';
 import { VRControls } from './js/VRControls.js';
-import { Pipe } from './js/Pipe.js';
+import { PipeSystem } from './js/PipeSystem.js';
 import { GameMenu } from './js/GameMenu.js'; 
 
-console.log("Station Saver VR v2.4 - Final Polish");
+console.log("Station Saver VR v2.5 - Final Clean Release");
 
 let gameState = 'MENU'; 
 let timeLeft = 120.0;
@@ -29,75 +29,24 @@ document.getElementById('vr-button-container').appendChild(VRButton.createButton
 
 const environment = new Environment(scene);
 const menu = new GameMenu(scene, cameraGroup); 
+const pipeSystem = new PipeSystem(scene);
 
-const pipes = [];
-const startZ = -8.75;
-const segmentLength = 2.5;
-const heightMap = [1, 0, 1, 0, 1, 0, 1, 0]; 
-const HIGH_Y = 1.3;
-const LOW_Y = 0.75; 
+const controls = new VRControls(renderer, scene, cameraGroup, onInteract);
+const clock = new THREE.Clock();
+let lastBreakTime = 0;
 
-function createVerticalConnector(x, yStart, yEnd, z) {
-    const height = Math.abs(yEnd - yStart);
-    const midY = (yStart + yEnd) / 2;
-    const geo = new THREE.CylinderGeometry(0.055, 0.055, height, 16);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.4, metalness: 0.6 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, midY, z);
-    scene.add(mesh);
-    const jointGeo = new THREE.SphereGeometry(0.075, 16, 16);
-    const jointMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    const topJoint = new THREE.Mesh(jointGeo, jointMat);
-    topJoint.position.set(x, yEnd, z); scene.add(topJoint);
-    const botJoint = new THREE.Mesh(jointGeo, jointMat);
-    botJoint.position.set(x, yStart, z); scene.add(botJoint);
-}
-
-function addVerticalPipe(x, yStart, yEnd, z, isLeft) {
-    const midY = (yStart + yEnd) / 2;
-    pipes.push(new Pipe(scene, z, isLeft, midY, true));
-    const jointGeo = new THREE.SphereGeometry(0.075, 16, 16);
-    const jointMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    const topJoint = new THREE.Mesh(jointGeo, jointMat);
-    topJoint.position.set(x, yEnd, z); scene.add(topJoint);
-    const botJoint = new THREE.Mesh(jointGeo, jointMat);
-    botJoint.position.set(x, yStart, z); scene.add(botJoint);
-}
-
-for (let i = 0; i < 8; i++) {
-    const zPos = startZ + (i * segmentLength);
-    const yLeft = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
-    const yRight = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
-    
-    pipes.push(new Pipe(scene, zPos, true, yLeft, false));
-    if (i > 0) {
-        const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
-        if (prevY !== yLeft) addVerticalPipe(-1.45, prevY, yLeft, zPos - 1.25, true);
-    }
-
-    pipes.push(new Pipe(scene, zPos, false, yRight, false));
-    if (i > 0) {
-        const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
-        if (prevY !== yRight) addVerticalPipe(1.45, prevY, yRight, zPos - 1.25, false);
-    }
-}
+menu.showStart();
 
 function startGame() {
     timeLeft = 120.0;
     oxygen = 100.0;
-    
-    // Reset beim Start
-    pipes.forEach(p => {
-        p.repair();
-        if (p.spareGroup) p.spareGroup.visible = false;
-    });
-
+    pipeSystem.reset();
     cameraGroup.position.set(0, 0, 0);
     menu.hide();
     gameState = 'PLAYING';
     
     setTimeout(() => {
-        if(gameState === 'PLAYING') pipes[Math.floor(Math.random() * pipes.length)].breakPipe();
+        if(gameState === 'PLAYING') pipeSystem.breakRandom();
     }, 2000);
 }
 
@@ -105,19 +54,13 @@ function endGame(win, reason) {
     gameState = win ? 'WIN' : 'GAMEOVER';
     cameraGroup.position.set(0, 0, 0);
     
-    // 1. Controller leeren
     controls.controllers.forEach(c => {
         c.userData.hasPart = false;
         c.userData.heldPipeRef = null;
         controls.dropPart(c);
     });
 
-    // 2. ALLE PIPES REPARIEREN (Cleanup für den Hintergrund)
-    // Damit beim Game Over Screen nicht noch Dampf zischt
-    pipes.forEach(p => {
-        p.repair();
-        if (p.spareGroup) p.spareGroup.visible = false;
-    });
+    pipeSystem.reset(); // Sauberes Level für den End-Screen
 
     if (win) menu.showWin(oxygen);
     else menu.showGameOver(reason);
@@ -188,12 +131,6 @@ function onInteract(object, actionType, controller) {
     }
 }
 
-const controls = new VRControls(renderer, scene, cameraGroup, onInteract);
-const clock = new THREE.Clock();
-let lastBreakTime = 0;
-
-menu.showStart();
-
 renderer.setAnimationLoop(() => {
     const delta = clock.getDelta();
     const time = clock.getElapsedTime();
@@ -203,14 +140,13 @@ renderer.setAnimationLoop(() => {
     } 
     else {
         timeLeft -= delta;
-        let brokenCount = 0;
-        pipes.forEach(p => { if(p.isBroken) brokenCount++; });
+        
+        const brokenCount = pipeSystem.getBrokenCount();
 
         if (brokenCount > 0) {
             const lossRate = 0.5 + (brokenCount * 1.0);
             oxygen -= lossRate * delta;
         } else {
-            // Regeneration verlangsamt auf 2.0 (vorher 5.0)
             oxygen += 2.0 * delta; 
         }
         oxygen = Math.min(100, oxygen);
@@ -225,10 +161,10 @@ renderer.setAnimationLoop(() => {
 
         if (time - lastBreakTime > spawnInterval) { 
             lastBreakTime = time;
-            const randomPipe = pipes[Math.floor(Math.random() * pipes.length)];
-            randomPipe.breakPipe();
+            pipeSystem.breakRandom();
         }
         
+        pipeSystem.update();
         environment.updateInfoScreen(timeLeft, oxygen);
     }
 
@@ -246,7 +182,6 @@ renderer.setAnimationLoop(() => {
     });
 
     if (controls) controls.update();
-    pipes.forEach(pipe => pipe.update());
     
     renderer.render(scene, camera);
 });

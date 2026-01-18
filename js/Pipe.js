@@ -1,16 +1,16 @@
 import * as THREE from 'three';
 
 export class Pipe {
-    constructor(scene, positionZ, isLeftWall, heightY, isVertical = false) {
+    constructor(scene, positionZ, isLeftWall, heightY, length = 2.5, isVertical = false) {
         this.scene = scene;
         this.isBroken = false;
         this.isVertical = isVertical; 
+        this.length = length;
         
         const xPos = isLeftWall ? -1.45 : 1.45;
-        const yPos = heightY; 
         
         this.group = new THREE.Group();
-        this.group.position.set(xPos, yPos, positionZ);
+        this.group.position.set(xPos, heightY, positionZ);
         
         if (!isLeftWall) {
             this.group.rotation.y = Math.PI;
@@ -25,46 +25,38 @@ export class Pipe {
         const pipeRadius = 0.055;
         const jointRadius = 0.075;
 
-        const sideGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, 1.0, 16);
-        const middleGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, 0.5, 16);
+        const midLen = 0.5; 
+        const sideLen = (this.length - midLen) / 2;
+        const sideOffset = (midLen / 2) + (sideLen / 2);
+
+        const sideGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, sideLen, 16);
+        const middleGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, midLen, 16);
 
         const innerGroup = new THREE.Group();
-        if (this.isVertical) {
-            innerGroup.rotation.x = 0; 
-        } else {
-            innerGroup.rotation.x = Math.PI / 2;
-        }
+        innerGroup.rotation.x = this.isVertical ? 0 : Math.PI / 2;
         this.group.add(innerGroup);
 
-        // 1. Seitenteile
         const part1 = new THREE.Mesh(sideGeo, pipeMat);
-        part1.position.y = 0.75; 
+        part1.position.y = sideOffset; 
         innerGroup.add(part1);
 
         const part2 = new THREE.Mesh(sideGeo, pipeMat);
-        part2.position.y = -0.75; 
+        part2.position.y = -sideOffset; 
         innerGroup.add(part2);
 
-        // Muffe
         const jStart = new THREE.Mesh(new THREE.CylinderGeometry(jointRadius, jointRadius, 0.1, 16), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-        jStart.position.y = -1.25; 
+        jStart.position.y = -(sideOffset + sideLen/2); 
         innerGroup.add(jStart);
 
-        // 2. Trigger
-        const gapBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial({visible:false}));
-        gapBox.name = 'pipe_gap'; gapBox.userData = { pipe: this };
+        const gapBox = new THREE.Mesh(new THREE.BoxGeometry(0.4, midLen, 0.4), new THREE.MeshBasicMaterial({visible:false}));
+        gapBox.name = 'pipe_gap'; 
+        gapBox.userData = { pipe: this };
         innerGroup.add(gapBox); 
 
-        // 3. Heiles Stück
         this.healthyPart = new THREE.Mesh(middleGeo, pipeMat);
         innerGroup.add(this.healthyPart);
 
-        // 4. ERSATZTEIL
         this.spareGroup = new THREE.Group();
-        const randomZ = (Math.random() - 0.5) * 1.0; 
-        this.spareGroup.position.set(1.0, -this.group.position.y + 0.05, randomZ);
-        this.spareGroup.rotation.y = Math.random() * Math.PI;
-        this.spareGroup.visible = false;
         this.group.add(this.spareGroup);
 
         const spareMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8, metalness: 0.2 });
@@ -80,11 +72,13 @@ export class Pipe {
         hitBox.userData = { pipe: this }; 
         this.spareGroup.add(hitBox);
 
-        // 5. Dampf
         this.createSteam();
         this.steam.position.set(0,0,0);
         this.steam.rotation.set(0,0, -Math.PI/2); 
         this.group.add(this.steam);
+        
+        this.respawnPart();
+        this.spareGroup.visible = false;
     }
 
     createSteam() {
@@ -99,12 +93,8 @@ export class Pipe {
         geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         geo.userData = { speeds: speeds };
         const mat = new THREE.PointsMaterial({
-            color: 0xdddddd, 
-            size: 0.12, // Kleiner (vorher 0.15)
-            transparent: true, 
-            opacity: 0.0,
-            blending: THREE.AdditiveBlending, 
-            depthWrite: false
+            color: 0xdddddd, size: 0.12, transparent: true, opacity: 0.0,
+            blending: THREE.AdditiveBlending, depthWrite: false
         });
         this.steam = new THREE.Points(geo, mat);
     }
@@ -114,8 +104,6 @@ export class Pipe {
         this.isBroken = true;
         this.healthyPart.visible = false;
         this.respawnPart(); 
-        
-        // WENIGER DAMPF: Opacity runter auf 0.15 (vorher 0.4)
         this.steam.material.opacity = 0.15;
     }
 

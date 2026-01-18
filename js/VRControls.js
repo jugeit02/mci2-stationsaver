@@ -54,14 +54,11 @@ export class VRControls {
             grip.add(controllerModelFactory.createControllerModel(grip));
             this.cameraGroup.add(grip);
 
-            // --- ANPASSUNG: DÜNNERES ROHR IN DER HAND ---
             const partGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.4, 16);
             const partMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.5 });
             const handPart = new THREE.Mesh(partGeo, partMat);
-            
             handPart.rotation.set(0, 0, Math.PI / 2); 
             handPart.position.set(0, 0, -0.25); 
-            
             handPart.visible = false; 
             controller.add(handPart);
             controller.userData.handPart = handPart;

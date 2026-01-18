@@ -4,20 +4,16 @@ export class Environment {
     constructor(scene) {
         this.scene = scene;
         
-        // Canvas für den Screen (Wir malen darauf wie in Paint)
         this.screenCanvas = document.createElement('canvas');
         this.screenCanvas.width = 512;
         this.screenCanvas.height = 256;
         this.screenContext = this.screenCanvas.getContext('2d');
-        
-        // Textur erstellen, die den Canvas nutzt
         this.screenTexture = new THREE.CanvasTexture(this.screenCanvas);
         
         this.init();
     }
 
     init() {
-        // --- 1. Materialien ---
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.1); 
         this.scene.add(ambientLight);
 
@@ -26,22 +22,11 @@ export class Environment {
         floorTexture.wrapT = THREE.RepeatWrapping;
         floorTexture.repeat.set(2, 8);
 
-        const floorMat = new THREE.MeshStandardMaterial({ 
-            map: floorTexture, color: 0xaaaaaa, roughness: 0.7, metalness: 0.4 
-        });
-
-        const wallMat = new THREE.MeshStandardMaterial({ 
-            color: 0xbbbbbb, roughness: 0.5, metalness: 0.2, side: THREE.DoubleSide 
-        });
-
-        const slantMat = new THREE.MeshStandardMaterial({ 
-            color: 0x999999, roughness: 0.6, side: THREE.DoubleSide
-        });
-
+        const floorMat = new THREE.MeshStandardMaterial({ map: floorTexture, color: 0xaaaaaa, roughness: 0.7, metalness: 0.4 });
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, roughness: 0.5, metalness: 0.2, side: THREE.DoubleSide });
+        const slantMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.6, side: THREE.DoubleSide });
         const ribMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9 });
-        
 
-        // --- 2. Tunnel Aufbau ---
         const floorW = 2.0;    
         const wallH = 1.6;     
         const slantS = 0.8;    
@@ -75,7 +60,6 @@ export class Environment {
         wR.position.set((floorW/2 + offset), offset + wallH/2, 0);
         this.scene.add(wR);
 
-        // Rippen
         const ribGeo = new THREE.TorusGeometry(2.1, 0.15, 4, 8); 
         for (let z = -10; z <= 10; z += 2.5) {
             const rib = new THREE.Mesh(ribGeo, ribMat);
@@ -84,15 +68,10 @@ export class Environment {
             this.scene.add(rib);
         }
 
-        // Enden
-        this.createDoorWall(10, totalH, wallMat, true); // Tür
-        this.createDoorWall(-10, totalH, wallMat, false); // Wand
-        
-        // --- NEU: DER SCREEN ---
-        // Wir platzieren ihn an der Wand bei -10 (gegenüber der Tür)
-        this.createScreen(0, totalH/2, -9.95); // Leicht vor der Wand
+        this.createDoorWall(10, totalH, wallMat, true); 
+        this.createDoorWall(-10, totalH, wallMat, false); 
+        this.createScreen(0, totalH/2, -9.95);
 
-        // Lichter
         for (let z = -8; z <= 8; z += 4) {
              const pl = new THREE.PointLight(0xffffff, 0.5, 10);
              pl.position.set(0, totalH - 0.5, z);
@@ -101,76 +80,51 @@ export class Environment {
     }
 
     createScreen(x, y, z) {
-        // 1. Rahmen
-        const frame = new THREE.Mesh(
-            new THREE.BoxGeometry(2.2, 1.4, 0.1),
-            new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.2 })
-        );
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 0.1), new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.2 }));
         frame.position.set(x, y, z);
         this.scene.add(frame);
 
-        // 2. Das Display (Leuchtet!)
-        const screenGeo = new THREE.PlaneGeometry(2.0, 1.2);
-        const screenMat = new THREE.MeshBasicMaterial({ 
-            map: this.screenTexture, // Unsere Canvas-Textur
-            color: 0xffffff
-        });
-        const screen = new THREE.Mesh(screenGeo, screenMat);
-        screen.position.set(0, 0, 0.06); // Vor dem Rahmen
+        const screen = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.2), new THREE.MeshBasicMaterial({ map: this.screenTexture }));
+        screen.position.set(0, 0, 0.06); 
         frame.add(screen);
-
-        // Initiales Zeichnen
-        this.updateInfoScreen(120, 100);
     }
 
-    // Diese Funktion rufen wir jeden Frame aus app.mjs auf
     updateInfoScreen(timeLeft, oxygenLevel) {
         const ctx = this.screenContext;
         const w = this.screenCanvas.width;
         const h = this.screenCanvas.height;
 
-        // Hintergrund (Dunkelblau/Schwarz Sci-Fi)
         ctx.fillStyle = '#001122';
         ctx.fillRect(0, 0, w, h);
-
-        // Rahmen-Linie
         ctx.strokeStyle = '#00ffff';
         ctx.lineWidth = 5;
         ctx.strokeRect(10, 10, w-20, h-20);
 
-        // Überschrift
         ctx.font = '30px Arial';
         ctx.fillStyle = '#00ffff';
         ctx.textAlign = 'center';
         ctx.fillText("STATION STATUS", w/2, 50);
 
-        // ZEIT (Rot wenn wenig Zeit)
         ctx.font = 'bold 60px Courier New';
         ctx.fillStyle = timeLeft < 30 ? '#ff3333' : '#ffffff';
         const minutes = Math.floor(timeLeft / 60);
         const seconds = Math.floor(timeLeft % 60).toString().padStart(2, '0');
         ctx.fillText(`TIME: ${minutes}:${seconds}`, w/2, 130);
 
-        // SAUERSTOFF (Balken)
         ctx.font = '30px Arial';
         ctx.fillStyle = '#ffffff';
         ctx.fillText(`OXYGEN: ${Math.round(oxygenLevel)}%`, w/2, 190);
 
-        // Balken zeichnen
         const barW = 300;
         const barH = 20;
         const barX = (w - barW) / 2;
         const barY = 210;
 
-        // Leerer Balken
         ctx.fillStyle = '#333333';
         ctx.fillRect(barX, barY, barW, barH);
-        
-        // Füllung (Grün -> Rot)
         ctx.fillStyle = oxygenLevel > 30 ? '#00ff00' : '#ff0000';
         ctx.fillRect(barX, barY, barW * (oxygenLevel / 100), barH);
 
-        // WICHTIG: Three.js sagen, dass sich das Bild geändert hat
         this.screenTexture.needsUpdate = true;
     }
 
@@ -190,17 +144,14 @@ export class Environment {
 
         const wallLeft = new THREE.Mesh(new THREE.PlaneGeometry(w1, wallFullH), wallMat);
         wallLeft.position.set(-(doorW/2 + w1/2), totalH/2, 0); group.add(wallLeft);
-
         const wallRight = new THREE.Mesh(new THREE.PlaneGeometry(w1, wallFullH), wallMat);
         wallRight.position.set((doorW/2 + w1/2), totalH/2, 0); group.add(wallRight);
-
         const wallTop = new THREE.Mesh(new THREE.PlaneGeometry(doorW, 2.6), wallMat);
         wallTop.position.set(0, doorH + 1.3, 0); group.add(wallTop);
 
         if (hasDoor) {
             const frame = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.1), new THREE.MeshStandardMaterial({color:0x333333}));
             frame.position.set(0, doorH/2, 0); group.add(frame);
-            
             const door = new THREE.Mesh(new THREE.BoxGeometry(doorW - 0.2, doorH - 0.2, 0.05), new THREE.MeshStandardMaterial({color:0x555555}));
             door.position.set(0, doorH/2, 0.05); group.add(door);
         } else {
