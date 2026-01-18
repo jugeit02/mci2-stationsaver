@@ -4,7 +4,7 @@ import { Environment } from './js/Environment.js';
 import { VRControls } from './js/VRControls.js';
 import { Pipe } from './js/Pipe.js';
 
-console.log("Station Saver VR v1.2 - Floating Pipe");
+console.log("Station Saver VR v1.4 - Vertical Pipes & Regen");
 
 let hasSparePart = false;
 
@@ -36,19 +36,23 @@ const environment = new Environment(scene);
 const pipes = [];
 const startZ = -8.75;
 const segmentLength = 2.5;
-const heightMap = [1, 1, 0, 0, 1, 1, 1, 1]; 
+const heightMap = [1, 0, 1, 0, 1, 0, 1, 0]; 
+
 const HIGH_Y = 1.3;
 const LOW_Y = 0.75; 
 
-function createVerticalConnector(x, yStart, yEnd, z) {
-    const height = Math.abs(yEnd - yStart);
+// Neue Funktion: Erstellt eine ECHTE Pipe (interaktiv) statt nur Deko
+function addVerticalPipe(x, yStart, yEnd, z, isLeft) {
     const midY = (yStart + yEnd) / 2;
-    const geo = new THREE.CylinderGeometry(0.07, 0.07, height, 16);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.4, metalness: 0.6 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, midY, z);
-    scene.add(mesh);
-    const jointGeo = new THREE.SphereGeometry(0.09, 16, 16);
+    // Wir erstellen eine Pipe mit isVertical = true
+    // Pipe Constructor: (scene, positionZ, isLeftWall, heightY, isVertical)
+    // Achtung: positionZ ist hier z - 1.25 (die Kante zwischen Segmenten)
+    
+    // Wir fügen sie zur Liste hinzu, damit sie kaputt gehen kann!
+    pipes.push(new Pipe(scene, z, isLeft, midY, true));
+
+    // Gelenke bleiben Deko (Kugeln), die gehen nicht kaputt
+    const jointGeo = new THREE.SphereGeometry(0.075, 16, 16);
     const jointMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
     const topJoint = new THREE.Mesh(jointGeo, jointMat);
     topJoint.position.set(x, yEnd, z); scene.add(topJoint);
@@ -60,40 +64,50 @@ for (let i = 0; i < 8; i++) {
     const zPos = startZ + (i * segmentLength);
     const yLeft = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
     const yRight = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
-    pipes.push(new Pipe(scene, zPos, true, yLeft));
+    
+    // Horizontale Rohre
+    pipes.push(new Pipe(scene, zPos, true, yLeft, false));
+    
+    // Vertikale Verbindungen (Links)
     if (i > 0) {
         const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
-        if (prevY !== yLeft) createVerticalConnector(-1.45, prevY, yLeft, zPos - 1.25);
+        if (prevY !== yLeft) {
+            // Hier nutzen wir jetzt die neue Funktion
+            addVerticalPipe(-1.45, prevY, yLeft, zPos - 1.25, true);
+        }
     }
-    pipes.push(new Pipe(scene, zPos, false, yRight));
+
+    // Horizontale Rohre (Rechts)
+    pipes.push(new Pipe(scene, zPos, false, yRight, false));
+    
+    // Vertikale Verbindungen (Rechts)
     if (i > 0) {
         const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
-        if (prevY !== yRight) createVerticalConnector(1.45, prevY, yRight, zPos - 1.25);
+        if (prevY !== yRight) {
+            addVerticalPipe(1.45, prevY, yRight, zPos - 1.25, false);
+        }
     }
 }
 
-// --- ROTATIONS CHECK HELPER (UPDATED) ---
-function isAligned(controller) {
-    // Da das Rohr jetzt QUER (Local X) gehalten wird, 
-    // müssen wir schauen, wohin die X-Achse des Controllers zeigt.
+function isAligned(controller, targetPipe) {
+    // Wenn Pipe vertikal ist, muss Controller nach OBEN/UNTEN zeigen (Y-Achse)
+    // Wenn Pipe horizontal ist, muss Controller nach RECHTS/LINKS zeigen (X-Achse, weil quer gehalten)
     
-    // 1. Lokale X-Achse (Rechts)
-    const controllerSideways = new THREE.Vector3(1, 0, 0);
-    controllerSideways.applyQuaternion(controller.quaternion); 
+    // Wir nehmen die lokale X-Achse des Controllers (da Rohr quer in Hand)
+    const controllerVector = new THREE.Vector3(1, 0, 0); 
+    controllerVector.applyQuaternion(controller.quaternion); 
 
-    // 2. Wand-Rohre verlaufen entlang der Welt-Z-Achse (0, 0, 1)
-    const pipeDir = new THREE.Vector3(0, 0, 1);
+    let targetVector;
+    if (targetPipe.isVertical) {
+        targetVector = new THREE.Vector3(0, 1, 0); // Y-Achse
+    } else {
+        targetVector = new THREE.Vector3(0, 0, 1); // Z-Achse
+    }
 
-    // 3. Winkel berechnen
-    const angle = controllerSideways.angleTo(pipeDir);
-    
-    // 4. Toleranz (30 Grad)
-    const tolerance = THREE.MathUtils.degToRad(30); 
+    const angle = controllerVector.angleTo(targetVector);
+    const tolerance = THREE.MathUtils.degToRad(20); // 20 Grad Toleranz
 
-    // Parallel (0 Grad) ODER Anti-Parallel (180 Grad) ist beides ok
-    const isAlignedZ = angle < tolerance || angle > (Math.PI - tolerance);
-
-    return isAlignedZ;
+    return angle < tolerance || angle > (Math.PI - tolerance);
 }
 
 
@@ -114,22 +128,26 @@ function onInteract(object, actionType, controller) {
     if (actionType === 'end') {
         if (controller.userData.hasPart) {
             
-            // Reparatur nur, wenn Winkel stimmt!
             if (object && object.name === 'pipe_gap') {
                 const targetPipe = object.userData.pipe;
-                if (targetPipe.isBroken && isAligned(controller)) { 
+                if (targetPipe.isBroken && isAligned(controller, targetPipe)) { 
                     targetPipe.repair();
-                    oxygen = Math.min(100, oxygen + 10); 
-                    controller.userData.hasPart = false;
-                    controller.userData.heldPipeRef = null;
+                    //controller.userData.hasPart = false;  <-- Fehler im vorherigen Snippet (doppelt)
+                    //controller.userData.heldPipeRef = null;
                     controls.dropPart(controller);
-                    return;
+                    // Wir müssen hier returnen, damit der Respawn Code unten nicht ausgeführt wird
+                    controller.userData.hasPart = false; 
+                    controller.userData.heldPipeRef = null;
+                    return; 
                 }
             }
 
-            // Fallenlassen
+            // FALLEN LASSEN (Safe Respawn)
             const originalPipe = controller.userData.heldPipeRef;
-            if (originalPipe) originalPipe.respawnPart(controller.position);
+            if (originalPipe) {
+                // WICHTIG: Kein Argument mehr! Es spawnt automatisch sicher.
+                originalPipe.respawnPart(); 
+            }
             
             controller.userData.hasPart = false; 
             controller.userData.heldPipeRef = null;
@@ -149,18 +167,30 @@ renderer.setAnimationLoop(() => {
 
     if (!isGameOver) {
         timeLeft -= delta;
+        
         let brokenCount = 0;
         pipes.forEach(p => { if(p.isBroken) brokenCount++; });
-        const lossRate = 0.2 + (brokenCount * 0.8);
-        oxygen -= lossRate * delta;
+        
+        if (brokenCount > 0) {
+            // Wenn etwas kaputt ist: Sauerstoff sinkt
+            const lossRate = 0.5 + (brokenCount * 1.0);
+            oxygen -= lossRate * delta;
+        } else {
+            // Wenn ALLES ganz ist: Sauerstoff steigt langsam wieder an
+            // z.B. 5% pro Sekunde
+            oxygen += 5.0 * delta;
+        }
 
+        // Limits
         if (timeLeft <= 0 || oxygen <= 0) {
             isGameOver = true;
             oxygen = Math.max(0, oxygen);
             timeLeft = Math.max(0, timeLeft);
         }
+        oxygen = Math.min(100, oxygen); // Max 100%
 
-        if (time - lastBreakTime > 12) { 
+        // ZUFALLS-SCHADEN: ETWAS SCHNELLER (10s statt 12s)
+        if (time - lastBreakTime > 10) { 
             lastBreakTime = time;
             const randomPipe = pipes[Math.floor(Math.random() * pipes.length)];
             randomPipe.breakPipe();
@@ -168,13 +198,15 @@ renderer.setAnimationLoop(() => {
         environment.updateInfoScreen(timeLeft, oxygen);
     }
 
-    // Visuelles Feedback
+    // Farbe für Alignment prüfen (muss jetzt auch Vertikal checken)
     controls.controllers.forEach(controller => {
-        if (controller.userData.hasPart && controller.userData.hoveredObject?.name === 'pipe_gap') {
-            if (isAligned(controller)) {
-                controls.setPartColor(controller, 0x00ff00); // Grün
+        const target = controller.userData.hoveredObject;
+        if (controller.userData.hasPart && target?.name === 'pipe_gap') {
+            const pipe = target.userData.pipe;
+            if (isAligned(controller, pipe)) {
+                controls.setPartColor(controller, 0x00ff00); 
             } else {
-                controls.setPartColor(controller, 0xff0000); // Rot
+                controls.setPartColor(controller, 0xff0000); 
             }
         } else {
             controls.setPartColor(controller, 0x444444);

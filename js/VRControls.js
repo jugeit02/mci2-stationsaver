@@ -54,15 +54,12 @@ export class VRControls {
             grip.add(controllerModelFactory.createControllerModel(grip));
             this.cameraGroup.add(grip);
 
-            // --- ROHR IN DER HAND (UPDATE) ---
-            const partGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.4, 16);
+            // --- ANPASSUNG: DÜNNERES ROHR IN DER HAND ---
+            const partGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.4, 16);
             const partMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.5 });
             const handPart = new THREE.Mesh(partGeo, partMat);
             
-            // NEUE ROTATION: Quer liegend (Z-Rotation 90 Grad)
             handPart.rotation.set(0, 0, Math.PI / 2); 
-            
-            // NEUE POSITION: Schwebt 25cm vor dem Controller
             handPart.position.set(0, 0, -0.25); 
             
             handPart.visible = false; 
