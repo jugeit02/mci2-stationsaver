@@ -6,16 +6,12 @@ function createCastIronTexture() {
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
     const ctx = canvas.getContext('2d');
-    
-    ctx.fillStyle = '#666666';
-    ctx.fillRect(0,0,size,size);
-    
+    ctx.fillStyle = '#666666'; ctx.fillRect(0,0,size,size);
     for(let i=0; i<5000; i++) {
         ctx.fillStyle = Math.random() > 0.5 ? '#777777' : '#555555';
         ctx.fillRect(Math.random()*size, Math.random()*size, 2, 2);
     }
-    const tex = new THREE.CanvasTexture(canvas);
-    return tex;
+    return new THREE.CanvasTexture(canvas);
 }
 const ironTexture = createCastIronTexture();
 
@@ -29,21 +25,16 @@ export class PipeSystem {
     initLevel() {
         const startZ = -8.75;
         const segmentLength = 2.5;
-        
         const mapL = [0, 1, 0, 1, 0, 1, 0, 1]; 
         const mapR = [1, 0, 1, 0, 1, 0, 1, 0]; 
-
-        const HIGH_Y = 1.9;
-        const LOW_Y = 0.9;
+        const HIGH_Y = 1.9; const LOW_Y = 0.9;
 
         for (let i = 0; i < 8; i++) {
             const zPos = startZ + (i * segmentLength);
-            
             const yL = mapL[i] === 1 ? HIGH_Y : LOW_Y;
             const yR = mapR[i] === 1 ? HIGH_Y : LOW_Y;
 
             this.pipes.push(new Pipe(this.scene, zPos, true, yL, 2.5, false));
-
             if (i > 0) {
                 const prevYL = mapL[i-1] === 1 ? HIGH_Y : LOW_Y;
                 if (prevYL !== yL) {
@@ -54,7 +45,6 @@ export class PipeSystem {
             }
 
             this.pipes.push(new Pipe(this.scene, zPos, false, yR, 2.5, false));
-            
             if (i > 0) {
                 const prevYR = mapR[i-1] === 1 ? HIGH_Y : LOW_Y;
                 if (prevYR !== yR) {
@@ -74,15 +64,10 @@ export class PipeSystem {
 
     createElbow(x, y, z) {
         const jointGeo = new THREE.SphereGeometry(0.075, 32, 32); 
-        
         const jointMat = new THREE.MeshStandardMaterial({ 
-            color: 0x666666, 
-            roughness: 0.8, 
-            metalness: 0.6,
-            bumpMap: ironTexture,
-            bumpScale: 0.01
+            color: 0x666666, roughness: 0.8, metalness: 0.6,
+            bumpMap: ironTexture, bumpScale: 0.01
         }); 
-        
         const joint = new THREE.Mesh(jointGeo, jointMat);
         joint.position.set(x, y, z);
         this.scene.add(joint);
@@ -96,7 +81,11 @@ export class PipeSystem {
     }
 
     breakRandom() {
-        const randomPipe = this.pipes[Math.floor(Math.random() * this.pipes.length)];
+        const healthyPipes = this.pipes.filter(p => !p.isBroken);
+        
+        if (healthyPipes.length === 0) return;
+
+        const randomPipe = healthyPipes[Math.floor(Math.random() * healthyPipes.length)];
         randomPipe.breakPipe();
     }
 

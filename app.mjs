@@ -5,7 +5,7 @@ import { VRControls } from './js/VRControls.js';
 import { PipeSystem } from './js/PipeSystem.js';
 import { GameMenu } from './js/GameMenu.js'; 
 
-console.log("Station Saver VR v2.5 - Final Clean Release");
+console.log("Station Saver VR v2.6 - Double Trouble Update");
 
 let gameState = 'MENU'; 
 let timeLeft = 120.0;
@@ -144,10 +144,10 @@ renderer.setAnimationLoop(() => {
         const brokenCount = pipeSystem.getBrokenCount();
 
         if (brokenCount > 0) {
-            const lossRate = 0.5 + (brokenCount * 1.0);
+            const lossRate = 1 + (brokenCount * 1.0);
             oxygen -= lossRate * delta;
         } else {
-            oxygen += 2.0 * delta; 
+            oxygen += 1.75 * delta; 
         }
         oxygen = Math.min(100, oxygen);
 
@@ -155,13 +155,18 @@ renderer.setAnimationLoop(() => {
         else if (timeLeft <= 0) endGame(true, "TIME UP - YOU SURVIVED");
 
         const timePlayed = 120.0 - timeLeft;
-        let spawnInterval = 8; 
-        if (timePlayed > 40) spawnInterval = 7; 
-        if (timePlayed > 80) spawnInterval = 6; 
+        let spawnInterval = 7.0; 
+        if (timePlayed > 40) spawnInterval = 6.0; 
+        if (timePlayed > 80) spawnInterval = 5.0; 
 
         if (time - lastBreakTime > spawnInterval) { 
             lastBreakTime = time;
+            
             pipeSystem.breakRandom();
+
+            if (Math.random() < 0.33) {
+                   pipeSystem.breakRandom();  
+            }
         }
         
         pipeSystem.update();
