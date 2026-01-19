@@ -27,7 +27,7 @@ renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
 document.getElementById('vr-button-container').appendChild(VRButton.createButton(renderer));
 
-const environment = new Environment(scene);
+const environment = new Environment(scene, renderer);
 const menu = new GameMenu(scene, cameraGroup); 
 const pipeSystem = new PipeSystem(scene);
 
@@ -60,7 +60,7 @@ function endGame(win, reason) {
         controls.dropPart(c);
     });
 
-    pipeSystem.reset(); // Sauberes Level für den End-Screen
+    pipeSystem.reset();
 
     if (win) menu.showWin(oxygen);
     else menu.showGameOver(reason);

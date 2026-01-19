@@ -1,36 +1,66 @@
 import * as THREE from 'three';
 
+function createBrushedMetalTexture() {
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#808080'; ctx.fillRect(0, 0, size, size);
+    for (let i = 0; i < 4000; i++) {
+        const shade = Math.floor(Math.random() * 100 + 100); 
+        ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+        const x = Math.random() * size; const y = Math.random() * size;
+        const w = Math.random() * 100 + 20; const h = Math.random() * 2 + 0.5;
+        ctx.globalAlpha = 0.15; ctx.fillRect(x, y, w, h);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+}
+const sharedMetalTexture = createBrushedMetalTexture();
+
 export class Pipe {
     constructor(scene, positionZ, isLeftWall, heightY, length = 2.5, isVertical = false) {
         this.scene = scene;
         this.isBroken = false;
         this.isVertical = isVertical; 
-        this.length = length;
+        
+        if (!isVertical && length > 2.0) {
+            this.length = length - 0.10; 
+        } else {
+            this.length = length;
+        }
         
         const xPos = isLeftWall ? -1.45 : 1.45;
-        
         this.group = new THREE.Group();
         this.group.position.set(xPos, heightY, positionZ);
         
-        if (!isLeftWall) {
-            this.group.rotation.y = Math.PI;
-        }
+        if (!isLeftWall) this.group.rotation.y = Math.PI;
 
         this.init();
         this.scene.add(this.group);
     }
 
     init() {
-        const pipeMat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.4, metalness: 0.6 });
-        const pipeRadius = 0.055;
-        const jointRadius = 0.075;
+        const pipeMat = new THREE.MeshStandardMaterial({ 
+            color: 0xcccccc,      
+            roughness: 0.3,      
+            metalness: 0.9,       
+            bumpMap: sharedMetalTexture, 
+            bumpScale: 0.02,
+            roughnessMap: sharedMetalTexture
+        });
+
+        const pipeRadius = 0.045;
+        const jointRadius = 0.06;
 
         const midLen = 0.5; 
-        const sideLen = (this.length - midLen) / 2;
+        let sideLen = (this.length - midLen) / 2;
+        if (sideLen < 0) sideLen = 0.01;
+        
         const sideOffset = (midLen / 2) + (sideLen / 2);
-
-        const sideGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, sideLen, 16);
-        const middleGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, midLen, 16);
+        const sideGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, sideLen, 32); 
+        const middleGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, midLen, 32);
 
         const innerGroup = new THREE.Group();
         innerGroup.rotation.x = this.isVertical ? 0 : Math.PI / 2;
@@ -44,11 +74,20 @@ export class Pipe {
         part2.position.y = -sideOffset; 
         innerGroup.add(part2);
 
-        const jStart = new THREE.Mesh(new THREE.CylinderGeometry(jointRadius, jointRadius, 0.1, 16), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-        jStart.position.y = -(sideOffset + sideLen/2); 
-        innerGroup.add(jStart);
+        const jMat = new THREE.MeshStandardMaterial({ 
+            color: 0x444444, roughness: 0.8, metalness: 0.4 
+        });
+        const jGeo = new THREE.CylinderGeometry(jointRadius, jointRadius, 0.06, 32);
+        
+        const jTop = new THREE.Mesh(jGeo, jMat);
+        jTop.position.y = (sideOffset + sideLen/2); 
+        innerGroup.add(jTop);
 
-        const gapBox = new THREE.Mesh(new THREE.BoxGeometry(0.4, midLen, 0.4), new THREE.MeshBasicMaterial({visible:false}));
+        const jBot = new THREE.Mesh(jGeo, jMat);
+        jBot.position.y = -(sideOffset + sideLen/2); 
+        innerGroup.add(jBot);
+
+        const gapBox = new THREE.Mesh(new THREE.BoxGeometry(0.35, midLen, 0.35), new THREE.MeshBasicMaterial({visible:false}));
         gapBox.name = 'pipe_gap'; 
         gapBox.userData = { pipe: this };
         innerGroup.add(gapBox); 
@@ -59,7 +98,14 @@ export class Pipe {
         this.spareGroup = new THREE.Group();
         this.group.add(this.spareGroup);
 
-        const spareMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8, metalness: 0.2 });
+        const spareMat = new THREE.MeshStandardMaterial({ 
+            color: 0x888888, 
+            roughness: 0.5, 
+            metalness: 0.6,
+            bumpMap: sharedMetalTexture,
+            bumpScale: 0.02
+        });
+        
         const visualPart = new THREE.Mesh(middleGeo, spareMat);
         visualPart.rotation.z = Math.PI / 2; 
         visualPart.name = 'spare_part';       

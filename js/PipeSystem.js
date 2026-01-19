@@ -1,6 +1,24 @@
 import * as THREE from 'three';
 import { Pipe } from './Pipe.js';
 
+function createCastIronTexture() {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.fillStyle = '#666666';
+    ctx.fillRect(0,0,size,size);
+    
+    for(let i=0; i<5000; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? '#777777' : '#555555';
+        ctx.fillRect(Math.random()*size, Math.random()*size, 2, 2);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+}
+const ironTexture = createCastIronTexture();
+
 export class PipeSystem {
     constructor(scene) {
         this.scene = scene;
@@ -11,43 +29,63 @@ export class PipeSystem {
     initLevel() {
         const startZ = -8.75;
         const segmentLength = 2.5;
-        const heightMap = [1, 0, 1, 0, 1, 0, 1, 0]; 
-        const HIGH_Y = 1.3;
-        const LOW_Y = 0.75;
+        
+        const mapL = [0, 1, 0, 1, 0, 1, 0, 1]; 
+        const mapR = [1, 0, 1, 0, 1, 0, 1, 0]; 
+
+        const HIGH_Y = 1.9;
+        const LOW_Y = 0.9;
 
         for (let i = 0; i < 8; i++) {
             const zPos = startZ + (i * segmentLength);
-            const yLeft = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
-            const yRight = heightMap[i] === 1 ? HIGH_Y : LOW_Y;
             
-            this.pipes.push(new Pipe(this.scene, zPos, true, yLeft, 2.5, false));
-            
+            const yL = mapL[i] === 1 ? HIGH_Y : LOW_Y;
+            const yR = mapR[i] === 1 ? HIGH_Y : LOW_Y;
+
+            this.pipes.push(new Pipe(this.scene, zPos, true, yL, 2.5, false));
+
             if (i > 0) {
-                const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
-                if (prevY !== yLeft) this.addVerticalPipe(-1.45, prevY, yLeft, zPos - 1.25, true);
+                const prevYL = mapL[i-1] === 1 ? HIGH_Y : LOW_Y;
+                if (prevYL !== yL) {
+                    this.addVerticalPipe(-1.45, prevYL, yL, zPos - 1.25, true);
+                    this.createElbow(-1.45, prevYL, zPos - 1.25);
+                    this.createElbow(-1.45, yL, zPos - 1.25);
+                }
             }
 
-            this.pipes.push(new Pipe(this.scene, zPos, false, yRight, 2.5, false));
+            this.pipes.push(new Pipe(this.scene, zPos, false, yR, 2.5, false));
             
             if (i > 0) {
-                const prevY = heightMap[i-1] === 1 ? HIGH_Y : LOW_Y;
-                if (prevY !== yRight) this.addVerticalPipe(1.45, prevY, yRight, zPos - 1.25, false);
+                const prevYR = mapR[i-1] === 1 ? HIGH_Y : LOW_Y;
+                if (prevYR !== yR) {
+                    this.addVerticalPipe(1.45, prevYR, yR, zPos - 1.25, false);
+                    this.createElbow(1.45, prevYR, zPos - 1.25);
+                    this.createElbow(1.45, yR, zPos - 1.25);
+                }
             }
         }
     }
 
     addVerticalPipe(x, yStart, yEnd, z, isLeft) {
         const midY = (yStart + yEnd) / 2;
-        const height = Math.abs(yEnd - yStart);
-        
+        const height = Math.abs(yEnd - yStart) - 0.12; 
         this.pipes.push(new Pipe(this.scene, z, isLeft, midY, height, true));
+    }
+
+    createElbow(x, y, z) {
+        const jointGeo = new THREE.SphereGeometry(0.075, 32, 32); 
         
-        const jointGeo = new THREE.SphereGeometry(0.075, 16, 16);
-        const jointMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-        const topJoint = new THREE.Mesh(jointGeo, jointMat);
-        topJoint.position.set(x, yEnd, z); this.scene.add(topJoint);
-        const botJoint = new THREE.Mesh(jointGeo, jointMat);
-        botJoint.position.set(x, yStart, z); this.scene.add(botJoint);
+        const jointMat = new THREE.MeshStandardMaterial({ 
+            color: 0x666666, 
+            roughness: 0.8, 
+            metalness: 0.6,
+            bumpMap: ironTexture,
+            bumpScale: 0.01
+        }); 
+        
+        const joint = new THREE.Mesh(jointGeo, jointMat);
+        joint.position.set(x, y, z);
+        this.scene.add(joint);
     }
 
     reset() {
